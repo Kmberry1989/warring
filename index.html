@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>WARRING</title>
+  <title>WARRING!</title>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <style>
     :root {
@@ -238,22 +238,22 @@
 <body>
   <div id="app">
     <div id="lobby" class="screen active">
-      <div class="logo"><span>WARIO</span><span>DUEL</span></div>
+      <div class="logo"><span>WARRING</span><span>FOLKS!</span></div>
       <div class="card">
         <button id="hostBtn" class="btn blue">HOST GAME</button>
         <button id="joinBtn" class="btn yellow">JOIN GAME</button>
         <div id="hostP" style="display:none">
-          <p><b>1. Send this OFFER:</b></p><textarea id="offOut" rows="3" readonly></textarea><button class="btn yellow"
+          <p><b>1. Send this CODE to your worst friend/best enemy:</b></p><textarea id="offOut" rows="3" readonly></textarea><button class="btn yellow"
             onclick="navigator.clipboard.writeText(offOut.value)">COPY</button>
-          <p><b>2. Paste ANSWER:</b></p><textarea id="ansIn" rows="3"></textarea><button id="goBtn"
+          <p><b>2. Paste their RESPONSE:</b></p><textarea id="ansIn" rows="3"></textarea><button id="goBtn"
             class="btn blue">CONNECT</button>
         </div>
         <div id="joinP" style="display:none">
-          <p>Paste OFFER:</p><textarea id="offIn" rows="3"></textarea><button id="makeBtn" class="btn blue">MAKE
-            ANSWER</button>
+          <p>Paste CODE:</p><textarea id="offIn" rows="3"></textarea><button id="makeBtn" class="btn blue">MAKE
+            WARRING</button>
           <textarea id="ansOut" rows="3" readonly style="display:none"></textarea><button id="copyAns"
             class="btn yellow" style="display:none" onclick="navigator.clipboard.writeText(ansOut.value)">COPY
-            ANSWER</button>
+        </button>
         </div>
         <p id="stat" style="text-align:center;font-family:system-ui;font-size:13px"></p>
       </div>
