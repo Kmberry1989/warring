@@ -19,8 +19,20 @@ function parseRoomId(pathname) {
   return parts[2] || "";
 }
 
-function roomResponse(room, env, roomId, requestUrl) {
-  const base = env.PUBLIC_BASE_URL || new URL(requestUrl).origin;
+function roomResponse(room, env, roomId, request) {
+  const configuredBase = env.PUBLIC_BASE_URL || "";
+  const useRequestOrigin =
+    !configuredBase ||
+    configuredBase.includes("127.0.0.1") ||
+    configuredBase.includes("localhost");
+  let base = configuredBase;
+  if (useRequestOrigin) {
+    const url = new URL(request.url);
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const origin = forwardedHost ? `${forwardedProto || url.protocol.replace(":", "")}://${forwardedHost}` : url.origin;
+    base = origin;
+  }
   return {
     roomId,
     joinUrl: `${base.replace(/\/$/, "")}?room=${roomId}`,
@@ -67,7 +79,7 @@ export default {
       }
       const stub = env.ROOM_DO.get(env.ROOM_DO.idFromName(roomId));
       const room = await (await stub.fetch("https://room.internal/meta")).json();
-      return json(roomResponse(room, env, roomId, request.url), { status: 201 });
+      return json(roomResponse(room, env, roomId, request), { status: 201 });
     }
 
     const roomId = parseRoomId(url.pathname);

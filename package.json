@@ -1,0 +1,11 @@
+{
+  "name": "warring",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Touch-first microgame battler with WebRTC multiplayer and Cloudflare Worker signaling.",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "deploy": "wrangler deploy",
+    "whoami": "wrangler whoami"
+  }
+}
