@@ -1,0 +1,9 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]: WARRING
+    - generic [ref=e6]: FOLKS!
+  - generic [ref=e7]:
+    - button "SOLO MODE" [ref=e8] [cursor=pointer]
+    - button "HOST GAME" [ref=e9] [cursor=pointer]
+    - button "JOIN GAME" [ref=e10] [cursor=pointer]
+    - paragraph [ref=e11]

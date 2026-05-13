@@ -589,23 +589,48 @@ function createGames() {
 
   games.fly = {
     id: "fly",
-    prompt: "TAP!",
+    prompt: "SWAT!",
+    hint: "DROP THE SWATTER",
+    duration: 14000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
-        ctx.area.innerHTML = '<div class="fly">🪰</div>';
+        ctx.area.innerHTML =
+          '<div class="fly">🪰</div>' +
+          '<div id="swatter" style="position:absolute;left:50%;top:18%;font-size:22cqw;transform:translate(-50%,-180%) rotate(-18deg) scale(1.25);' +
+          'filter:drop-shadow(0 6px 0 rgba(0,0,0,0.32));pointer-events:none;opacity:0;transition:transform 0.16s ease, opacity 0.08s ease">🩴</div>';
         const fly = ctx.area.firstElementChild;
+        const swatter = $("#swatter");
         const move = () => {
-          fly.style.left = Math.random() * 80 + "%";
-          fly.style.top = Math.random() * 70 + "%";
+          fly.style.left = Math.random() * 72 + 8 + "%";
+          fly.style.top = Math.random() * 54 + 22 + "%";
+        };
+        const swing = (event) => {
+          const rect = ctx.area.getBoundingClientRect();
+          swatter.style.opacity = "1";
+          swatter.style.left = event.clientX - rect.left + "px";
+          swatter.style.top = event.clientY - rect.top - 14 + "px";
+          swatter.style.transform = "translate(-50%,-50%) rotate(8deg) scale(0.72)";
+          ctx.scope.setTimeout(() => {
+            swatter.style.opacity = "0";
+            swatter.style.transform = "translate(-50%,-180%) rotate(-18deg) scale(1.25)";
+          }, 110);
         };
         move();
-        ctx.scope.setInterval(move, 400);
-        fly.onclick = () => {
+        ctx.scope.setInterval(move, 520);
+        fly.onpointerdown = (event) => {
+          swing(event);
           ctx.click();
+          const areaRect = ctx.area.getBoundingClientRect();
+          ctx.fx.spawn(event.clientX - areaRect.left, event.clientY - areaRect.top, false);
           done({ won: true });
         };
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+        ctx.area.onpointerdown = (event) => swing(event);
+        ctx.scope.addCleanup(() => {
+          fly.onpointerdown = null;
+          ctx.area.onpointerdown = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 14000);
       });
     },
   };
@@ -711,19 +736,21 @@ function createGames() {
   games.dodge = {
     id: "dodge",
     prompt: "DODGE!",
+    hint: "DON'T GET BONKED",
+    duration: 14000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
           '<div style="position:absolute;bottom:24px;font-size:14cqw;left:50%;transform:translateX(-50%)">🏃</div>';
         const player = ctx.area.firstElementChild;
-        let x = 50;
+        let playerX = 0;
         let hit = false;
         const move = (event) => {
           const point = event.touches ? event.touches[0] : event;
           const rect = ctx.area.getBoundingClientRect();
-          x = ((point.clientX - rect.left) / rect.width) * 100;
-          player.style.left = x + "%";
+          playerX = Math.max(0, Math.min(rect.width, point.clientX - rect.left));
+          player.style.left = (playerX / rect.width) * 100 + "%";
         };
         ctx.area.onpointermove = move;
         ctx.scope.addCleanup(() => {
@@ -738,15 +765,23 @@ function createGames() {
           const fall = ctx.scope.setInterval(() => {
             y += 3;
             banana.style.top = y + "%";
-            if (y > 70 && Math.abs(parseFloat(banana.style.left) - x) < 12) hit = true;
+            const playerRect = player.getBoundingClientRect();
+            const bananaRect = banana.getBoundingClientRect();
+            const overlapX = Math.max(0, Math.min(playerRect.right, bananaRect.right) - Math.max(playerRect.left, bananaRect.left));
+            const overlapY = Math.max(0, Math.min(playerRect.bottom, bananaRect.bottom) - Math.max(playerRect.top, bananaRect.top));
+            if (overlapX > Math.min(playerRect.width, bananaRect.width) * 0.28 && overlapY > Math.min(playerRect.height, bananaRect.height) * 0.18) {
+              hit = true;
+            }
             if (y > 100) {
               clearInterval(fall);
               banana.remove();
             }
           }, 30);
         };
+        const areaRect = ctx.area.getBoundingClientRect();
+        playerX = areaRect.width * 0.5;
         ctx.scope.setInterval(drop, 500);
-        ctx.scope.setTimeout(() => done({ won: !hit }), 12000);
+        ctx.scope.setTimeout(() => done({ won: !hit }), 14000);
       });
     },
   };
@@ -876,36 +911,95 @@ function createGames() {
 
   games.trace = {
     id: "trace",
-    prompt: "CIRCLE!",
+    prompt: "TRACE!",
+    hint: "FOLLOW THE SHAPE",
+    duration: 15000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<canvas id="cv" width="300" height="300" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:90cqw;max-height:90cqw;touch-action:none"></canvas>';
+          '<canvas id="cv" width="320" height="320" style="position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);max-width:90cqw;max-height:90cqw;touch-action:none"></canvas>';
         const canvas = $("#cv");
         const draw = canvas.getContext("2d");
-        draw.lineWidth = 12;
-        draw.strokeStyle = "#fff";
+        const shapes = [
+          [
+            { x: 54, y: 208 },
+            { x: 96, y: 106 },
+            { x: 160, y: 56 },
+            { x: 228, y: 112 },
+            { x: 266, y: 206 },
+          ],
+          [
+            { x: 52, y: 164 },
+            { x: 104, y: 100 },
+            { x: 160, y: 152 },
+            { x: 214, y: 98 },
+            { x: 270, y: 160 },
+            { x: 218, y: 222 },
+            { x: 160, y: 180 },
+            { x: 98, y: 228 },
+          ],
+          [
+            { x: 74, y: 244 },
+            { x: 96, y: 126 },
+            { x: 160, y: 74 },
+            { x: 224, y: 126 },
+            { x: 246, y: 244 },
+          ],
+        ];
+        const points = shapes[Math.floor(Math.random() * shapes.length)];
+        draw.lineWidth = 16;
+        draw.lineJoin = "round";
+        draw.lineCap = "round";
+        draw.strokeStyle = "rgba(255,255,255,0.45)";
+        draw.setLineDash([12, 10]);
         draw.beginPath();
-        draw.arc(150, 150, 100, 0, Math.PI * 2);
+        draw.moveTo(points[0].x, points[0].y);
+        points.slice(1).forEach((point) => draw.lineTo(point.x, point.y));
         draw.stroke();
-        draw.globalCompositeOperation = "destination-out";
+        draw.setLineDash([]);
+        draw.lineWidth = 8;
+        draw.strokeStyle = "rgba(255,244,184,0.98)";
+        draw.beginPath();
+        draw.moveTo(points[0].x, points[0].y);
+        points.slice(1).forEach((point) => draw.lineTo(point.x, point.y));
+        draw.stroke();
+        points.forEach((point, index) => {
+          draw.fillStyle = index === 0 ? "#8cffb2" : "#ffffff";
+          draw.beginPath();
+          draw.arc(point.x, point.y, index === 0 ? 10 : 7, 0, Math.PI * 2);
+          draw.fill();
+        });
         let dragging = false;
-        let passes = 0;
+        let progress = 0;
+        let strokes = 0;
         const handle = (event) => {
-          if (!dragging) return;
+          if (!dragging || progress >= points.length) return;
           const rect = canvas.getBoundingClientRect();
           const point = event.touches ? event.touches[0] : event;
-          const x = ((point.clientX - rect.left) * 300) / rect.width;
-          const y = ((point.clientY - rect.top) * 300) / rect.height;
+          const x = ((point.clientX - rect.left) * 320) / rect.width;
+          const y = ((point.clientY - rect.top) * 320) / rect.height;
+          draw.fillStyle = "rgba(255,255,255,0.42)";
           draw.beginPath();
-          draw.arc(x, y, 20, 0, Math.PI * 2);
+          draw.arc(x, y, 7, 0, Math.PI * 2);
           draw.fill();
-          passes += 1;
-          if (passes % 5 === 0) ctx.click();
+          strokes += 1;
+          const next = points[progress];
+          if (Math.hypot(x - next.x, y - next.y) < 24) {
+            progress += 1;
+            ctx.note(560 + progress * 70, 70, 0.45, "sine");
+            const areaRect = ctx.area.getBoundingClientRect();
+            ctx.fx.spawn((x / 320) * areaRect.width, (y / 320) * areaRect.height, false);
+            if (progress >= points.length) done({ won: true });
+          } else if (strokes % 8 === 0) {
+            ctx.click();
+          }
         };
-        canvas.onpointerdown = () => {
-          dragging = true;
+        canvas.onpointerdown = (event) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = ((event.clientX - rect.left) * 320) / rect.width;
+          const y = ((event.clientY - rect.top) * 320) / rect.height;
+          dragging = Math.hypot(x - points[0].x, y - points[0].y) < 28;
         };
         canvas.onpointerup = () => {
           dragging = false;
@@ -916,7 +1010,7 @@ function createGames() {
           canvas.onpointerup = null;
           canvas.onpointermove = null;
         });
-        ctx.scope.setTimeout(() => done({ won: passes > 60 }), 10000);
+        ctx.scope.setTimeout(() => done({ won: progress >= points.length }), 15000);
       });
     },
   };
@@ -1135,33 +1229,75 @@ function createGames() {
   games.scratch = {
     id: "scratch",
     prompt: "SCRATCH!",
+    hint: "RUB THE COIN",
+    duration: 16000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div style="position:absolute;inset:20%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12cqw;border:4px solid #000">💎</div>' +
-          '<canvas id="sc" width="300" height="300" style="position:absolute;inset:20%;width:60%;height:60%"></canvas>';
+          '<div style="position:absolute;inset:18%;background:linear-gradient(180deg,#fffef7 0%,#f8f0db 100%);display:flex;align-items:center;justify-content:center;font-size:12cqw;border:3px solid rgba(255,255,255,0.8);border-radius:24px;box-shadow:0 16px 32px rgba(46,67,118,0.15)">💎</div>' +
+          '<canvas id="sc" width="320" height="320" style="position:absolute;inset:18%;width:64%;height:64%;touch-action:none"></canvas>' +
+          '<div id="coin" style="position:absolute;left:50%;top:50%;font-size:15cqw;z-index:8;pointer-events:none;filter:drop-shadow(0 5px 0 rgba(0,0,0,0.3))">🪙</div>';
         const canvas = $("#sc");
+        const coin = $("#coin");
         const draw = canvas.getContext("2d");
-        draw.fillStyle = "#999";
-        draw.fillRect(0, 0, 300, 300);
+        draw.fillStyle = "#b6bbc6";
+        draw.fillRect(0, 0, 320, 320);
+        draw.fillStyle = "rgba(255,255,255,0.12)";
+        for (let x = 0; x < 320; x += 24) {
+          for (let y = 0; y < 320; y += 24) {
+            draw.beginPath();
+            draw.arc(x + 10, y + 12, 7, 0, Math.PI * 2);
+            draw.fill();
+          }
+        }
         draw.globalCompositeOperation = "destination-out";
-        let passes = 0;
-        canvas.onpointermove = (event) => {
-          const rect = canvas.getBoundingClientRect();
-          const x = ((event.clientX - rect.left) * 300) / rect.width;
-          const y = ((event.clientY - rect.top) * 300) / rect.height;
-          draw.beginPath();
-          draw.arc(x, y, 25, 0, Math.PI * 2);
-          draw.fill();
-          passes += 1;
-          if (passes % 5 === 0) ctx.click();
-          if (passes > 70) done({ won: true });
+        let scratching = false;
+        let lastSampleAt = 0;
+        const revealRatio = () => {
+          const image = draw.getImageData(0, 0, 320, 320).data;
+          let clear = 0;
+          for (let i = 3; i < image.length; i += 24) {
+            if (image[i] < 60) clear += 1;
+          }
+          return clear / (image.length / 24);
         };
+        const scratch = (event) => {
+          if (!scratching) return;
+          const rect = canvas.getBoundingClientRect();
+          const areaRect = ctx.area.getBoundingClientRect();
+          coin.style.left = event.clientX - areaRect.left - 24 + "px";
+          coin.style.top = event.clientY - areaRect.top - 24 + "px";
+          const x = ((event.clientX - rect.left) * 320) / rect.width;
+          const y = ((event.clientY - rect.top) * 320) / rect.height;
+          draw.beginPath();
+          draw.arc(x, y, 30, 0, Math.PI * 2);
+          draw.fill();
+          ctx.fx.spawn(event.clientX - areaRect.left, event.clientY - areaRect.top, false);
+          if (Date.now() - lastSampleAt > 220) {
+            lastSampleAt = Date.now();
+            ctx.click();
+            if (revealRatio() > 0.55) done({ won: true });
+          }
+        };
+        canvas.onpointerdown = (event) => {
+          scratching = true;
+          scratch(event);
+        };
+        canvas.onpointerup = () => {
+          scratching = false;
+        };
+        canvas.onpointerleave = () => {
+          scratching = false;
+        };
+        canvas.onpointermove = scratch;
         ctx.scope.addCleanup(() => {
+          canvas.onpointerdown = null;
+          canvas.onpointerup = null;
+          canvas.onpointerleave = null;
           canvas.onpointermove = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+        ctx.scope.setTimeout(() => done({ won: revealRatio() > 0.55 }), 16000);
       });
     },
   };
@@ -1277,6 +1413,8 @@ function createGames() {
   games.jump = {
     id: "jump",
     prompt: "JUMP!",
+    hint: "HOP THE CAR",
+    duration: 15000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
@@ -1289,12 +1427,14 @@ function createGames() {
         let y = 20;
         let ox = 100;
         let jumping = false;
+        let speed = 0.68;
         const loop = ctx.scope.setInterval(() => {
-          ox -= 2.5 + ctx.round * 0.1;
+          speed = Math.min(2.05, speed + 0.013);
+          ox -= speed;
           obstacle.style.left = ox + "%";
           if (jumping) {
             y += velocity;
-            velocity -= 1;
+            velocity -= 0.82;
           }
           if (y <= 20) {
             y = 20;
@@ -1308,7 +1448,7 @@ function createGames() {
         ctx.area.onpointerdown = () => {
           if (!jumping) {
             jumping = true;
-            velocity = 9;
+            velocity = 8.5;
             ctx.click();
           }
         };
@@ -1323,27 +1463,72 @@ function createGames() {
   games.slice = {
     id: "slice",
     prompt: "SLICE!",
+    hint: "CUT EVERY PIECE",
+    duration: 16000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div id="m" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20cqw;">🍉</div>';
+          '<div id="sliceBoard" style="position:absolute;inset:0;touch-action:none"></div>' +
+          '<div id="sliceStatus" style="position:absolute;top:10%;width:100%;text-align:center;color:#fff;font-size:5.8cqw;' +
+          '-webkit-text-stroke:1px rgba(30,38,73,0.45);text-shadow:0 6px 16px rgba(35,47,95,0.35)">1 OF 3</div>';
+        const board = $("#sliceBoard");
+        const status = $("#sliceStatus");
+        const stages = [
+          [{ left: 50, top: 50, size: 20, emoji: "🍉" }],
+          [
+            { left: 36, top: 48, size: 15, emoji: "🍉" },
+            { left: 64, top: 52, size: 15, emoji: "🍉" },
+          ],
+          [
+            { left: 28, top: 42, size: 12, emoji: "🍉" },
+            { left: 46, top: 58, size: 12, emoji: "🍉" },
+            { left: 60, top: 40, size: 12, emoji: "🍉" },
+            { left: 74, top: 58, size: 12, emoji: "🍉" },
+          ],
+        ];
+        let stageIndex = 0;
         let dragging = false;
+        const renderStage = () => {
+          board.replaceChildren();
+          status.textContent = `${stageIndex + 1} OF ${stages.length}`;
+          stages[stageIndex].forEach((piece, index) => {
+            const node = document.createElement("div");
+            node.dataset.sliceIndex = String(index);
+            node.style.cssText =
+              `position:absolute;left:${piece.left}%;top:${piece.top}%;transform:translate(-50%,-50%);` +
+              `font-size:${piece.size}cqw;transition:transform 0.16s ease, opacity 0.16s ease;filter:drop-shadow(0 5px 0 rgba(0,0,0,0.28))`;
+            node.textContent = piece.emoji;
+            board.appendChild(node);
+          });
+        };
+        const advanceStage = () => {
+          stageIndex += 1;
+          if (stageIndex >= stages.length) {
+            done({ won: true });
+            return;
+          }
+          renderStage();
+        };
+        renderStage();
         ctx.area.onpointerdown = () => {
           dragging = true;
         };
         ctx.area.onpointermove = (event) => {
           if (!dragging) return;
-          const rect = $("#m").getBoundingClientRect();
-          if (
-            event.clientX > rect.left &&
-            event.clientX < rect.right &&
-            event.clientY > rect.top &&
-            event.clientY < rect.bottom
-          ) {
-            ctx.click();
-            $("#m").textContent = "🔪🍉";
-            done({ won: true });
+          const target = document.elementFromPoint(event.clientX, event.clientY);
+          if (target?.dataset?.sliceIndex) {
+            const rect = target.getBoundingClientRect();
+            const areaRect = ctx.area.getBoundingClientRect();
+            ctx.note(780, 90, 0.5, "triangle");
+            ctx.fx.spawn(rect.left - areaRect.left + rect.width / 2, rect.top - areaRect.top + rect.height / 2, false);
+            target.style.transform = "translate(-50%,-50%) scale(0.72) rotate(-12deg)";
+            target.style.opacity = "0.35";
+            target.removeAttribute("data-slice-index");
+            ctx.scope.setTimeout(() => {
+              target.remove();
+              if (!board.querySelector("[data-slice-index]")) advanceStage();
+            }, 80);
           }
         };
         ctx.area.onpointerup = () => {
@@ -1354,7 +1539,7 @@ function createGames() {
           ctx.area.onpointermove = null;
           ctx.area.onpointerup = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+        ctx.scope.setTimeout(() => done({ won: false }), 16000);
       });
     },
   };
@@ -1363,13 +1548,15 @@ function createGames() {
     id: "scrub",
     prompt: "SCRUB!",
     hint: "MOVE THE SPONGE",
+    duration: 15000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.style.cursor = "none";
         const sponge = document.createElement("div");
         sponge.textContent = "🧽";
-        sponge.style.cssText = "position:absolute;left:50%;top:50%;font-size:12cqw;z-index:8;pointer-events:none;filter:drop-shadow(0 4px 0 #000)";
+        sponge.style.cssText =
+          "position:absolute;left:50%;top:50%;font-size:17cqw;z-index:8;pointer-events:none;filter:drop-shadow(0 5px 0 rgba(0,0,0,0.3))";
         ctx.area.appendChild(sponge);
         let dirtCount = 8 + Math.floor(ctx.round / 3);
         for (let i = 0; i < dirtCount; i += 1) {
@@ -1383,10 +1570,11 @@ function createGames() {
         }
         ctx.area.onpointermove = (event) => {
           const rect = ctx.area.getBoundingClientRect();
-          sponge.style.left = event.clientX - rect.left - 16 + "px";
-          sponge.style.top = event.clientY - rect.top - 16 + "px";
+          sponge.style.left = event.clientX - rect.left - 28 + "px";
+          sponge.style.top = event.clientY - rect.top - 28 + "px";
           const target = document.elementFromPoint(event.clientX, event.clientY);
           if (target?.classList.contains("dirt")) {
+            ctx.fx.spawn(event.clientX - rect.left, event.clientY - rect.top, false);
             target.remove();
             dirtCount -= 1;
             if (dirtCount % 3 === 0) ctx.click();
@@ -1397,7 +1585,7 @@ function createGames() {
           ctx.area.onpointermove = null;
           ctx.area.style.cursor = "";
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+        ctx.scope.setTimeout(() => done({ won: false }), 15000);
       });
     },
   };
@@ -1599,12 +1787,13 @@ function createGames() {
     id: "spy",
     prompt: "FOLLOW!",
     hint: "TRACK THE THIEF",
+    duration: 14000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
           '<div id="thief" style="position:absolute;font-size:12cqw;transition:all 0.45s linear;left:50%;top:50%;filter:drop-shadow(0 4px 0 #000)">🕵️</div>' +
-          '<div id="overlay" style="position:absolute;inset:0;background:radial-gradient(circle 130px at 50% 50%, rgba(255,255,255,0.04), rgba(8,16,30,0.42) 62%, rgba(8,16,30,0.72) 100%);pointer-events:none"></div>' +
+          '<div id="overlay" style="position:absolute;inset:0;background:radial-gradient(circle 185px at 50% 50%, rgba(255,255,255,0.1), rgba(8,16,30,0.28) 56%, rgba(8,16,30,0.5) 100%);pointer-events:none"></div>' +
           '<div id="spyScore" style="position:absolute;top:10%;width:100%;text-align:center;color:#fff;font-size:7cqw;-webkit-text-stroke:2px #000;text-shadow:0 4px 0 #000">0</div>';
         const thief = $("#thief");
         const overlay = $("#overlay");
@@ -1624,7 +1813,8 @@ function createGames() {
           const rect = ctx.area.getBoundingClientRect();
           px = ((x - rect.left) / rect.width) * 100;
           py = ((y - rect.top) / rect.height) * 100;
-          overlay.style.background = `radial-gradient(circle 80px at ${px}% ${py}%, transparent, #000 100%)`;
+          overlay.style.background =
+            `radial-gradient(circle 160px at ${px}% ${py}%, rgba(255,255,255,0.12), rgba(8,16,30,0.28) 60%, rgba(8,16,30,0.5) 100%)`;
         };
         const move = (event) => {
           const point = event.touches ? event.touches[0] : event;
@@ -1634,13 +1824,21 @@ function createGames() {
         ctx.scope.setInterval(moveThief, 600);
         ctx.area.onpointermove = move;
         ctx.scope.setInterval(() => {
-          if (Math.hypot(px - tx, py - ty) < 22) score += 1;
+          const lockedOn = Math.hypot(px - tx, py - ty) < 28;
+          if (lockedOn) {
+            score += 1;
+            thief.style.transform = "scale(1.16)";
+            thief.style.filter = "drop-shadow(0 6px 0 rgba(0,0,0,0.28)) brightness(1.18)";
+          } else {
+            thief.style.transform = "scale(1)";
+            thief.style.filter = "drop-shadow(0 4px 0 rgba(0,0,0,0.24))";
+          }
           scoreEl.textContent = String(score);
         }, 100);
         ctx.scope.addCleanup(() => {
           ctx.area.onpointermove = null;
         });
-        ctx.scope.setTimeout(() => done({ won: score >= 16 }), 12000);
+        ctx.scope.setTimeout(() => done({ won: score >= 18 }), 14000);
       });
     },
   };
@@ -1960,6 +2158,7 @@ class MatchController {
     this.role = "host";
     this.round = 1;
     this.lastGameId = "";
+    this.gameQueue = [];
     this.currentScope = null;
     this.currentRound = null;
     this.pendingLocal = new Map();
@@ -2006,11 +2205,14 @@ class MatchController {
   }
 
   nextGameId() {
-    const ids = Object.keys(this.games);
-    let id = ids[Math.floor(Math.random() * ids.length)];
-    while (id === this.lastGameId) {
-      id = ids[Math.floor(Math.random() * ids.length)];
+    if (!this.gameQueue.length) {
+      this.gameQueue = Object.keys(this.games).sort(() => Math.random() - 0.5);
+      if (this.gameQueue[0] === this.lastGameId && this.gameQueue.length > 1) {
+        const first = this.gameQueue.shift();
+        this.gameQueue.push(first);
+      }
     }
+    const id = this.gameQueue.shift();
     this.lastGameId = id;
     return id;
   }
@@ -2147,14 +2349,18 @@ class MatchController {
     const remote = this.pendingRemote.get(round);
     if (!local || !remote) return;
 
-    this.resolvedRounds.add(round);
-    this.pendingLocal.delete(round);
-    this.pendingRemote.delete(round);
-
     let localWins = false;
     if (local.won && remote.won) {
       const delta = Math.abs(local.time - remote.time);
-      localWins = delta < 0.05 ? this.role === "host" : local.time < remote.time;
+      if (delta < 0.12) {
+        this.showRoundVerdict("TOO CLOSE!", false);
+        window.setTimeout(() => {
+          if (this.ended) return;
+          if (this.role === "host") this.beginHostedRound({ gameId: this.currentGameId });
+        }, ROUND_RESULT_MS);
+        return;
+      }
+      localWins = local.time < remote.time;
     } else if (local.won || remote.won) {
       localWins = local.won && !remote.won;
     } else {
@@ -2165,6 +2371,10 @@ class MatchController {
       }, ROUND_RESULT_MS);
       return;
     }
+
+    this.resolvedRounds.add(round);
+    this.pendingLocal.delete(round);
+    this.pendingRemote.delete(round);
 
     if (localWins) this.myScore += 1;
     else this.oppScore += 1;

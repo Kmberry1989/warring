@@ -195,22 +195,36 @@
       background: rgba(255, 255, 255, 0.66);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
+      position: relative;
+      isolation: isolate;
     }
 
     .pulse-btn {
-      animation: menuPulse 1.8s ease-in-out infinite;
+      animation: none;
     }
 
-    @keyframes menuPulse {
+    .pulse-btn::after {
+      content: "";
+      position: absolute;
+      inset: -7px;
+      border-radius: inherit;
+      background: radial-gradient(circle, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.16) 48%, transparent 72%);
+      opacity: 0.18;
+      z-index: -1;
+      pointer-events: none;
+      animation: buttonHalo 1.8s ease-in-out infinite;
+    }
+
+    @keyframes buttonHalo {
       0%,
       100% {
-        transform: translateY(0) scale(1);
-        box-shadow: 0 10px 24px rgba(37, 55, 107, 0.18), inset 0 1px 0 rgba(255,255,255,0.7);
+        opacity: 0.18;
+        transform: scale(0.98);
       }
 
       50% {
-        transform: translateY(-2px) scale(1.02);
-        box-shadow: 0 16px 30px rgba(37, 55, 107, 0.22), inset 0 1px 0 rgba(255,255,255,0.82);
+        opacity: 0.42;
+        transform: scale(1.06);
       }
     }
 
