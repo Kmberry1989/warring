@@ -263,9 +263,9 @@ async function copyText(text, successMessage) {
   }
 }
 
-function appendChatMessage(sender, text, me = false) {
+function appendChatMessage(sender, text, me = false, kind = "") {
   const row = document.createElement("div");
-  row.className = `chat-msg${me ? " me" : ""}`;
+  row.className = `chat-msg${me ? " me" : ""}${kind ? ` ${kind}` : ""}`;
   row.innerHTML = `<span class="chat-name">${sender}</span>${text}`;
   refs.chatLog.appendChild(row);
   refs.chatLog.scrollTop = refs.chatLog.scrollHeight;
@@ -605,7 +605,7 @@ function createGames() {
           ctx.click();
           done({ won: true });
         };
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -624,7 +624,7 @@ function createGames() {
         ctx.scope.addCleanup(() => {
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: safe }), 3000);
+        ctx.scope.setTimeout(() => done({ won: safe }), 10000);
       });
     },
   };
@@ -703,7 +703,7 @@ function createGames() {
         };
         drop();
         ctx.scope.setInterval(drop, 700);
-        ctx.scope.setTimeout(() => done({ won: caught >= 3 }), 4000);
+        ctx.scope.setTimeout(() => done({ won: caught >= 3 }), 14000);
       });
     },
   };
@@ -746,7 +746,7 @@ function createGames() {
           }, 30);
         };
         ctx.scope.setInterval(drop, 500);
-        ctx.scope.setTimeout(() => done({ won: !hit }), 3500);
+        ctx.scope.setTimeout(() => done({ won: !hit }), 12000);
       });
     },
   };
@@ -783,7 +783,7 @@ function createGames() {
           ctx.area.onpointerdown = null;
           ctx.area.onpointerup = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 2200);
+        ctx.scope.setTimeout(() => done({ won: false }), 10000);
       });
     },
   };
@@ -804,7 +804,7 @@ function createGames() {
           btn.style.transform = `translate(-50%, -50%) scale(${1 - count * 0.05})`;
           if (count === 3) done({ won: true });
         };
-        ctx.scope.setTimeout(() => done({ won: count === 3 }), 2500);
+        ctx.scope.setTimeout(() => done({ won: count === 3 }), 10000);
       });
     },
   };
@@ -848,7 +848,7 @@ function createGames() {
           button.onpointerup = null;
           button.onpointerleave = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 3200);
+        ctx.scope.setTimeout(() => done({ won: false }), 11000);
       });
     },
   };
@@ -869,7 +869,7 @@ function createGames() {
           btn.style.transform = `translate(-50%, -50%) scale(${1 + count * 0.04})`;
           if (count >= 12) done({ won: true });
         };
-        ctx.scope.setTimeout(() => done({ won: count >= 12 }), 3200);
+        ctx.scope.setTimeout(() => done({ won: count >= 12 }), 11000);
       });
     },
   };
@@ -916,7 +916,7 @@ function createGames() {
           canvas.onpointerup = null;
           canvas.onpointermove = null;
         });
-        ctx.scope.setTimeout(() => done({ won: passes > 60 }), 3000);
+        ctx.scope.setTimeout(() => done({ won: passes > 60 }), 10000);
       });
     },
   };
@@ -957,7 +957,7 @@ function createGames() {
           };
           ctx.area.appendChild(item);
         });
-        ctx.scope.setTimeout(() => done({ won: found === 3 }), 4000);
+        ctx.scope.setTimeout(() => done({ won: found === 3 }), 14000);
       });
     },
   };
@@ -990,7 +990,7 @@ function createGames() {
           };
           ctx.area.appendChild(item);
         }
-        ctx.scope.setTimeout(() => done({ won: safe && greens <= 0 }), 3000);
+        ctx.scope.setTimeout(() => done({ won: safe && greens <= 0 }), 10000);
       });
     },
   };
@@ -1014,7 +1014,7 @@ function createGames() {
         ctx.scope.addCleanup(() => {
           ctx.area.onclick = null;
         });
-        ctx.scope.setTimeout(() => done({ won: size > 1.8 }), 3000);
+        ctx.scope.setTimeout(() => done({ won: size > 1.8 }), 10000);
       });
     },
   };
@@ -1048,7 +1048,7 @@ function createGames() {
           }, 800);
         };
         ctx.scope.setInterval(spawn, 600);
-        ctx.scope.setTimeout(() => done({ won: hits >= 3 }), 3500);
+        ctx.scope.setTimeout(() => done({ won: hits >= 3 }), 12000);
       });
     },
   };
@@ -1078,7 +1078,7 @@ function createGames() {
         ctx.scope.addCleanup(() => {
           ctx.area.onclick = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 3000);
+        ctx.scope.setTimeout(() => done({ won: false }), 10000);
       });
     },
   };
@@ -1127,7 +1127,7 @@ function createGames() {
           window.removeEventListener("pointermove", move);
           window.removeEventListener("pointerup", up);
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -1161,7 +1161,7 @@ function createGames() {
         ctx.scope.addCleanup(() => {
           canvas.onpointermove = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -1185,7 +1185,7 @@ function createGames() {
           item.onclick = () => done({ won: i === oddIndex });
           ctx.area.appendChild(item);
         }
-        ctx.scope.setTimeout(() => done({ won: false }), 4000);
+        ctx.scope.setTimeout(() => done({ won: false }), 14000);
       });
     },
   };
@@ -1233,7 +1233,7 @@ function createGames() {
           window.removeEventListener("pointermove", move);
           window.removeEventListener("pointerup", up);
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -1269,7 +1269,7 @@ function createGames() {
           };
           ctx.area.appendChild(btn);
         }
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -1354,7 +1354,7 @@ function createGames() {
           ctx.area.onpointermove = null;
           ctx.area.onpointerup = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -1423,7 +1423,7 @@ function createGames() {
           bubble.onclick = () => done({ won: value === answer });
           ctx.area.appendChild(bubble);
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 4500);
+        ctx.scope.setTimeout(() => done({ won: false }), 15000);
       });
     },
   };
@@ -1457,7 +1457,7 @@ function createGames() {
           target.onpointerdown = null;
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -1562,7 +1562,7 @@ function createGames() {
         ctx.scope.addCleanup(() => {
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 2500);
+        ctx.scope.setTimeout(() => done({ won: false }), 10000);
       });
     },
   };
@@ -1696,7 +1696,7 @@ function createGames() {
           clearInterval(animate);
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+        ctx.scope.setTimeout(() => done({ won: false }), 16000);
       });
     },
   };
@@ -1733,7 +1733,7 @@ function createGames() {
         ctx.scope.addCleanup(() => {
           ctx.area.onpointermove = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+        ctx.scope.setTimeout(() => done({ won: false }), 16000);
       });
     },
   };
@@ -1792,7 +1792,7 @@ function createGames() {
           });
           ctx.area.appendChild(item);
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+        ctx.scope.setTimeout(() => done({ won: false }), 16000);
       });
     },
   };
@@ -1916,7 +1916,7 @@ function createGames() {
           clearInterval(loop);
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+        ctx.scope.setTimeout(() => done({ won: false }), 16000);
       });
     },
   };
@@ -1940,7 +1940,7 @@ function createGames() {
           item.onclick = () => done({ won: i === realIndex });
           ctx.area.appendChild(item);
         }
-        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+        ctx.scope.setTimeout(() => done({ won: false }), 12000);
       });
     },
   };
@@ -1972,6 +1972,7 @@ class MatchController {
     this.gameTimer = 0;
     this.localRematchRequested = false;
     this.remoteRematchRequested = false;
+    this.currentGameId = null;
   }
 
   enterSolo() {
@@ -2014,7 +2015,7 @@ class MatchController {
     return id;
   }
 
-  beginHostedRound() {
+  beginHostedRound(options = {}) {
     if (this.ended) return;
     if (this.mode === "solo") {
       if (this.oppScore <= 0) {
@@ -2024,7 +2025,8 @@ class MatchController {
       if (this.round > 1) {
         updateHud("solo", this.currentHudState());
       }
-      const gameId = this.nextGameId();
+      const gameId = options.gameId || this.nextGameId();
+      this.currentGameId = gameId;
       this.playRound({ round: this.round, gameId });
       return;
     }
@@ -2034,33 +2036,35 @@ class MatchController {
       return;
     }
 
-    const gameId = this.nextGameId();
+    const gameId = options.gameId || this.nextGameId();
+    this.currentGameId = gameId;
     this.transport.send({ type: "round:start", round: this.round, gameId });
     this.playRound({ round: this.round, gameId });
   }
 
   playRound({ round, gameId }) {
     audio.setTempo(Math.max(90, 220 - round * 8));
-    refs.gameArea.replaceChildren();
-    const intro = document.createElement("div");
-    intro.className = "instr";
-    intro.style.transition = "opacity 0.35s ease, transform 0.35s ease";
-    intro.innerHTML =
-      `${this.games[gameId].prompt}<span style="font-size:clamp(18px,5cqw,30px);margin-top:12px;max-width:80%;line-height:1.15">` +
-      `${this.games[gameId].hint || "GET READY"}</span>`;
-    refs.gameArea.appendChild(intro);
-    if (this.mode === "versus") {
-      refs.roundNumber.textContent = String(round);
-    }
     if (this.currentScope) {
       this.currentScope.dispose();
       this.currentScope = null;
     }
     window.clearTimeout(this.gameTimer);
+    refs.gameArea.replaceChildren();
+    const intro = document.createElement("div");
+    intro.className = "instr";
+    intro.style.transition = "opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease";
+    intro.innerHTML =
+      `<div class="instr-card"><span class="instr-title">${this.games[gameId].prompt}</span>` +
+      `<span class="instr-hint">${this.games[gameId].hint || "GET READY"}</span></div>`;
+    refs.gameArea.appendChild(intro);
+    if (this.mode === "versus") {
+      refs.roundNumber.textContent = String(round);
+    }
     this.gameTimer = window.setTimeout(() => {
       intro.style.opacity = "0";
       intro.style.transform = "translateY(-14px) scale(0.96)";
-      setTimeout(() => intro.remove(), 350);
+      intro.style.filter = "blur(8px)";
+      setTimeout(() => intro.remove(), 450);
       const scope = createRoundScope(refs.gameArea);
       this.currentScope = scope;
       const game = this.games[gameId];
@@ -2147,11 +2151,26 @@ class MatchController {
     this.pendingLocal.delete(round);
     this.pendingRemote.delete(round);
 
-    if (local.won) this.myScore += 1;
-    if (remote.won) this.oppScore += 1;
+    let localWins = false;
+    if (local.won && remote.won) {
+      const delta = Math.abs(local.time - remote.time);
+      localWins = delta < 0.05 ? this.role === "host" : local.time < remote.time;
+    } else if (local.won || remote.won) {
+      localWins = local.won && !remote.won;
+    } else {
+      this.showRoundVerdict("RETRY!", false);
+      window.setTimeout(() => {
+        if (this.ended) return;
+        if (this.role === "host") this.beginHostedRound({ gameId: this.currentGameId });
+      }, ROUND_RESULT_MS);
+      return;
+    }
+
+    if (localWins) this.myScore += 1;
+    else this.oppScore += 1;
 
     updateHud("versus", this.currentHudState());
-    this.showRoundVerdict(local.won ? "WIN!" : "LOSE", local.won);
+    this.showRoundVerdict(localWins ? "WIN!" : "LOSE", localWins);
 
     window.setTimeout(() => {
       if (this.ended) return;
@@ -2370,7 +2389,7 @@ const controller = new MatchController({ games, transport });
 
 transport.onopen = () => {
   showConnectedLobby(appState.pendingRole || "guest");
-  appendChatMessage("ROOM", "Connection live. Host can start when ready.");
+  appendChatMessage("ROOM", "Connection live. Host can start when ready.", false, "room");
   setStatus("Connected. Use the room lobby to chat or start.", "success");
 };
 
