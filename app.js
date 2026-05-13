@@ -641,7 +641,9 @@ function createGames() {
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
-        ctx.area.innerHTML = '<div class="dontbtn" style="background:var(--r)">DON\'T</div>';
+        const isGreen = Math.random() < 0.25;
+        const color = isGreen ? 'var(--g)' : 'var(--r)';
+        ctx.area.innerHTML = `<div class="dontbtn" style="background:${color}">DON'T</div>`;
         let safe = true;
         ctx.area.onpointerdown = () => {
           safe = false;
@@ -650,6 +652,29 @@ function createGames() {
           ctx.area.onpointerdown = null;
         });
         ctx.scope.setTimeout(() => done({ won: safe }), 10000);
+      });
+    },
+  };
+
+  games.do = {
+    id: "do",
+    prompt: "DO!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        const isRed = Math.random() < 0.25;
+        const color = isRed ? 'var(--r)' : 'var(--g)';
+        ctx.area.innerHTML = `<div class="dontbtn" style="background:${color}">DO!</div>`;
+        let safe = false;
+        ctx.area.onpointerdown = () => {
+          ctx.click();
+          safe = true;
+          done({ won: true });
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointerdown = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: safe }), 4000);
       });
     },
   };
@@ -1029,29 +1054,52 @@ function createGames() {
           item.className = "find-item";
           item.textContent = "❓";
           item.style.cssText = `left:${15 + (index % 3) * 28}%;top:${20 + Math.floor(index / 3) * 35}%`;
+          item.flipped = false;
+          item.val = value;
           item.onclick = () => {
+            if (item.flipped) return;
+            item.flipped = true;
             ctx.click();
-            item.textContent = value;
+            item.style.transition = "transform 0.15s ease-in";
+            item.style.transform = "scaleX(0)";
+            ctx.scope.setTimeout(() => {
+              item.textContent = value;
+              item.style.transition = "transform 0.15s ease-out";
+              item.style.transform = "scaleX(1)";
+            }, 150);
+            
             if (!open) {
               open = item;
               return;
             }
-            if (open !== item && open.textContent === value) {
+            if (open.val === value) {
               found += 1;
               open = null;
-              if (found === 3) done({ won: true });
+              if (found === 3) ctx.scope.setTimeout(() => done({ won: true }), 300);
               return;
             }
             const other = open;
             open = null;
             ctx.scope.setTimeout(() => {
-              item.textContent = "❓";
-              other.textContent = "❓";
-            }, 350);
+              item.style.transition = "transform 0.15s ease-in";
+              item.style.transform = "scaleX(0)";
+              other.style.transition = "transform 0.15s ease-in";
+              other.style.transform = "scaleX(0)";
+              ctx.scope.setTimeout(() => {
+                item.textContent = "❓";
+                other.textContent = "❓";
+                item.flipped = false;
+                other.flipped = false;
+                item.style.transition = "transform 0.15s ease-out";
+                item.style.transform = "scaleX(1)";
+                other.style.transition = "transform 0.15s ease-out";
+                other.style.transform = "scaleX(1)";
+              }, 150);
+            }, 600);
           };
           ctx.area.appendChild(item);
         });
-        ctx.scope.setTimeout(() => done({ won: found === 3 }), 14000);
+        ctx.scope.setTimeout(() => done({ won: found === 3 }), 20000);
       });
     },
   };
@@ -2088,33 +2136,33 @@ function createGames() {
         ctx.area.innerHTML =
           '<div style="position:absolute;left:10%;right:10%;bottom:20%;height:6px;background:#f33"></div>' +
           '<div id="bounceBall" style="position:absolute;left:46%;bottom:45%;font-size:12cqw">🏀</div>' +
-          '<div id="bounceCount" style="position:absolute;top:10%;width:100%;text-align:center;font-size:10cqw">0/6</div>';
+          '<div id="bounceCount" style="position:absolute;top:10%;width:100%;text-align:center;font-size:10cqw">0</div>';
         const ball = $("#bounceBall");
         const count = $("#bounceCount");
-        let height = 45;
-        let velocity = -1.4;
+        let height = 60;
+        let velocity = 0;
         let beats = 0;
+        let gravity = 0.18;
+        let bounceForce = 3.8;
         const loop = ctx.scope.setInterval(() => {
           height += velocity;
-          velocity -= 0.18;
+          velocity -= gravity;
           if (height <= 20) done({ won: false });
           ball.style.bottom = height + "%";
         }, 30);
         ctx.area.onpointerdown = () => {
-          velocity = 3.8;
+          velocity = bounceForce;
           beats += 1;
+          gravity += 0.05;
+          bounceForce += 0.2;
           ctx.note(600 + beats * 40, 80, 0.5, "sine");
-          count.textContent = `${beats}/6`;
-          if (beats >= 6) {
-            clearInterval(loop);
-            done({ won: true });
-          }
+          count.textContent = `${beats}`;
         };
         ctx.scope.addCleanup(() => {
           clearInterval(loop);
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 16000);
+        ctx.scope.setTimeout(() => done({ won: true }), 12000);
       });
     },
   };

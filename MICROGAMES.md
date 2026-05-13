@@ -40,8 +40,16 @@ All microgames are touch-first, short, and intended to work the same in solo and
 - `balance`: keep the cursor inside the drifting green zone for 2 seconds.
 - `sort`: drag each item into the matching bin.
 - `zap`: start on blue, draw to yellow, and avoid the red blockers.
-- `bounce`: keep the ball alive by tapping rhythmic boosts.
+- `bounce`: keep the ball alive as it chaotically falls faster and faster.
 - `decoy`: tap the real star instead of the decoys.
+- `do`: tap the button before time runs out (opposite of dont).
+
+## Planned Set
+
+- `shake`: Move the cursor rapidly (or shake device) to wake up a sleeping character.
+- `hide`: Drag a character behind a bush before the spotlight hits them.
+- `steer`: Steer a car left/right to avoid an incoming obstacle.
+- `type`: Tap three letters in alphabetical order.
 
 ## Design Rules
 
