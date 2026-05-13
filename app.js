@@ -160,17 +160,21 @@ const fx = (() => {
     canvas.height = refs.app.offsetHeight;
   }
 
-  function spawn(x, y, isWin) {
+  function spawn(x, y, isWin, options = {}) {
+    const config =
+      typeof options === "string"
+        ? { color: options }
+        : options;
     const colors = ["#FFD400", "#7B2CF5", "#00E676", "#FF1744", "#00B0FF", "#FFFFFF"];
-    const amount = isWin ? 60 : 20;
+    const amount = config.amount ?? (isWin ? 60 : 20);
     for (let i = 0; i < amount; i += 1) {
       particles.push({
         x: x ?? canvas.width / 2,
         y: y ?? canvas.height / 2,
         vx: (Math.random() - 0.5) * (isWin ? 25 : 15),
         vy: (Math.random() - 0.5) * (isWin ? 25 : 15) - (isWin ? 8 : 2),
-        color: colors[Math.floor(Math.random() * colors.length)],
-        size: Math.random() * 8 + 5,
+        color: config.color ?? colors[Math.floor(Math.random() * colors.length)],
+        size: Math.random() * (config.sizeMax ?? 8) + (config.sizeMin ?? 5),
         life: 1,
         type: isWin ? "fw" : "conf",
       });
@@ -597,7 +601,7 @@ function createGames() {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
           '<div class="fly">🪰</div>' +
-          '<div id="swatter" style="position:absolute;left:50%;top:18%;font-size:22cqw;transform:translate(-50%,-180%) rotate(-18deg) scale(1.25);' +
+          '<div id="swatter" style="position:absolute;left:50%;top:18%;font-size:28cqw;transform:translate(-50%,-180%) rotate(-18deg) scale(1.4);' +
           'filter:drop-shadow(0 6px 0 rgba(0,0,0,0.32));pointer-events:none;opacity:0;transition:transform 0.16s ease, opacity 0.08s ease">🩴</div>';
         const fly = ctx.area.firstElementChild;
         const swatter = $("#swatter");
@@ -610,10 +614,10 @@ function createGames() {
           swatter.style.opacity = "1";
           swatter.style.left = event.clientX - rect.left + "px";
           swatter.style.top = event.clientY - rect.top - 14 + "px";
-          swatter.style.transform = "translate(-50%,-50%) rotate(8deg) scale(0.72)";
+          swatter.style.transform = "translate(-50%,-50%) rotate(8deg) scale(0.98)";
           ctx.scope.setTimeout(() => {
             swatter.style.opacity = "0";
-            swatter.style.transform = "translate(-50%,-180%) rotate(-18deg) scale(1.25)";
+            swatter.style.transform = "translate(-50%,-180%) rotate(-18deg) scale(1.4)";
           }, 110);
         };
         move();
@@ -854,17 +858,21 @@ function createGames() {
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
-        ctx.area.innerHTML = '<div class="dontbtn" style="background:var(--b)">0</div>';
+        ctx.area.innerHTML =
+          '<div class="dontbtn" style="background:var(--b);display:flex;flex-direction:column;gap:8px">' +
+          '<span style="font-size:0.22em;letter-spacing:0.18em">CLICKS LEFT</span><span id="tripleCount">3</span></div>';
         const btn = ctx.area.firstElementChild;
-        let count = 0;
+        const countLabel = $("#tripleCount");
+        let remaining = 3;
         btn.onclick = () => {
-          count += 1;
+          if (remaining <= 0) return;
+          remaining -= 1;
           ctx.click();
-          btn.textContent = String(count);
-          btn.style.transform = `translate(-50%, -50%) scale(${1 - count * 0.05})`;
-          if (count === 3) done({ won: true });
+          countLabel.textContent = String(remaining);
+          btn.style.transform = `translate(-50%, -50%) scale(${1 - (3 - remaining) * 0.05})`;
+          if (remaining === 0) done({ won: true });
         };
-        ctx.scope.setTimeout(() => done({ won: count === 3 }), 10000);
+        ctx.scope.setTimeout(() => done({ won: remaining === 0 }), 10000);
       });
     },
   };
@@ -1053,27 +1061,36 @@ function createGames() {
           const item = document.createElement("div");
           item.className = "find-item";
           item.textContent = "❓";
-          item.style.cssText = `left:${15 + (index % 3) * 28}%;top:${20 + Math.floor(index / 3) * 35}%`;
+          item.style.cssText =
+            `left:${12 + (index % 3) * 29}%;top:${18 + Math.floor(index / 3) * 35}%;` +
+            "width:23%;height:28%;display:flex;align-items:center;justify-content:center;" +
+            "font-size:13cqw;border-radius:18px;border:2px solid rgba(255,255,255,0.78);" +
+            "background:linear-gradient(180deg,rgba(255,255,255,0.24) 0%,rgba(145,110,52,0.26) 100%);" +
+            "box-shadow:0 12px 18px rgba(21,27,52,0.22);backdrop-filter:blur(6px)";
           item.flipped = false;
           item.val = value;
           item.onclick = () => {
             if (item.flipped) return;
             item.flipped = true;
             ctx.click();
-            item.style.transition = "transform 0.15s ease-in";
-            item.style.transform = "scaleX(0)";
+            item.style.transition = "transform 0.18s ease-in, filter 0.18s ease-in";
+            item.style.transform = "scaleX(0.08) rotateY(90deg)";
+            item.style.filter = "brightness(1.18)";
             ctx.scope.setTimeout(() => {
               item.textContent = value;
-              item.style.transition = "transform 0.15s ease-out";
-              item.style.transform = "scaleX(1)";
-            }, 150);
-            
+              item.style.transition = "transform 0.18s ease-out, filter 0.18s ease-out";
+              item.style.transform = "scaleX(1) rotateY(0deg)";
+              item.style.filter = "brightness(1)";
+            }, 180);
+
             if (!open) {
               open = item;
               return;
             }
             if (open.val === value) {
               found += 1;
+              item.style.background = "linear-gradient(180deg,rgba(180,255,212,0.94) 0%,rgba(104,195,136,0.92) 100%)";
+              open.style.background = "linear-gradient(180deg,rgba(180,255,212,0.94) 0%,rgba(104,195,136,0.92) 100%)";
               open = null;
               if (found === 3) ctx.scope.setTimeout(() => done({ won: true }), 300);
               return;
@@ -1081,25 +1098,25 @@ function createGames() {
             const other = open;
             open = null;
             ctx.scope.setTimeout(() => {
-              item.style.transition = "transform 0.15s ease-in";
-              item.style.transform = "scaleX(0)";
-              other.style.transition = "transform 0.15s ease-in";
-              other.style.transform = "scaleX(0)";
+              item.style.transition = "transform 0.18s ease-in";
+              item.style.transform = "scaleX(0.08) rotateY(90deg)";
+              other.style.transition = "transform 0.18s ease-in";
+              other.style.transform = "scaleX(0.08) rotateY(90deg)";
               ctx.scope.setTimeout(() => {
                 item.textContent = "❓";
                 other.textContent = "❓";
                 item.flipped = false;
                 other.flipped = false;
-                item.style.transition = "transform 0.15s ease-out";
-                item.style.transform = "scaleX(1)";
-                other.style.transition = "transform 0.15s ease-out";
-                other.style.transform = "scaleX(1)";
-              }, 150);
-            }, 600);
+                item.style.transition = "transform 0.18s ease-out";
+                item.style.transform = "scaleX(1) rotateY(0deg)";
+                other.style.transition = "transform 0.18s ease-out";
+                other.style.transform = "scaleX(1) rotateY(0deg)";
+              }, 180);
+            }, 700);
           };
           ctx.area.appendChild(item);
         });
-        ctx.scope.setTimeout(() => done({ won: found === 3 }), 20000);
+        ctx.scope.setTimeout(() => done({ won: found === 3 }), 24000);
       });
     },
   };
@@ -1277,21 +1294,21 @@ function createGames() {
   games.scratch = {
     id: "scratch",
     prompt: "SCRATCH!",
-    hint: "RUB THE COIN",
+    hint: "USE THE COIN",
     duration: 16000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div style="position:absolute;inset:18%;background:linear-gradient(180deg,#fffef7 0%,#f8f0db 100%);display:flex;align-items:center;justify-content:center;font-size:12cqw;border:3px solid rgba(255,255,255,0.8);border-radius:24px;box-shadow:0 16px 32px rgba(46,67,118,0.15)">💎</div>' +
-          '<canvas id="sc" width="320" height="320" style="position:absolute;inset:18%;width:64%;height:64%;touch-action:none"></canvas>' +
+          '<div style="position:absolute;inset:25%;background:linear-gradient(180deg,#fffef7 0%,#f8f0db 100%);display:flex;align-items:center;justify-content:center;font-size:12cqw;border:3px solid rgba(255,255,255,0.8);border-radius:24px;box-shadow:0 16px 32px rgba(46,67,118,0.15)">💎</div>' +
+          '<canvas id="sc" width="320" height="320" style="position:absolute;inset:25%;width:50%;height:50%;touch-action:none"></canvas>' +
           '<div id="coin" style="position:absolute;left:50%;top:50%;font-size:15cqw;z-index:8;pointer-events:none;filter:drop-shadow(0 5px 0 rgba(0,0,0,0.3))">🪙</div>';
         const canvas = $("#sc");
         const coin = $("#coin");
         const draw = canvas.getContext("2d");
-        draw.fillStyle = "#b6bbc6";
+        draw.fillStyle = "#b9c0c8";
         draw.fillRect(0, 0, 320, 320);
-        draw.fillStyle = "rgba(255,255,255,0.12)";
+        draw.fillStyle = "rgba(255,255,255,0.1)";
         for (let x = 0; x < 320; x += 24) {
           for (let y = 0; y < 320; y += 24) {
             draw.beginPath();
@@ -1319,9 +1336,16 @@ function createGames() {
           const x = ((event.clientX - rect.left) * 320) / rect.width;
           const y = ((event.clientY - rect.top) * 320) / rect.height;
           draw.beginPath();
-          draw.arc(x, y, 30, 0, Math.PI * 2);
+          draw.arc(x, y, 22, 0, Math.PI * 2);
           draw.fill();
-          ctx.fx.spawn(event.clientX - areaRect.left, event.clientY - areaRect.top, false);
+          if (Date.now() - lastSampleAt > 110) {
+            ctx.fx.spawn(event.clientX - areaRect.left, event.clientY - areaRect.top, false, {
+              color: "#c7ced6",
+              amount: 6,
+              sizeMin: 2,
+              sizeMax: 4,
+            });
+          }
           if (Date.now() - lastSampleAt > 220) {
             lastSampleAt = Date.now();
             ctx.click();
@@ -1475,14 +1499,14 @@ function createGames() {
         let y = 20;
         let ox = 100;
         let jumping = false;
-        let speed = 0.68;
+        let speed = 0.92;
         const loop = ctx.scope.setInterval(() => {
-          speed = Math.min(2.05, speed + 0.013);
+          speed = Math.min(2.2, speed + 0.012);
           ox -= speed;
           obstacle.style.left = ox + "%";
           if (jumping) {
             y += velocity;
-            velocity -= 0.82;
+            velocity -= 0.58;
           }
           if (y <= 20) {
             y = 20;
@@ -1490,13 +1514,13 @@ function createGames() {
             jumping = false;
           }
           player.style.bottom = y + "%";
-          if (ox < 35 && ox > 5 && y < 40) done({ won: false });
+          if (ox < 32 && ox > 9 && y < 38) done({ won: false });
           if (ox < -20) done({ won: true });
         }, 30);
         ctx.area.onpointerdown = () => {
           if (!jumping) {
             jumping = true;
-            velocity = 8.5;
+            velocity = 9.2;
             ctx.click();
           }
         };
@@ -2173,11 +2197,19 @@ function createGames() {
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
+        const decoySet = [
+          { real: "🙂", decoy: "😊" },
+          { real: "😃", decoy: "😀" },
+          { real: "😉", decoy: "😊" },
+          { real: "😮", decoy: "😯" },
+          { real: "😎", decoy: "🤓" },
+        ];
+        const pair = decoySet[Math.floor(Math.random() * decoySet.length)];
         const realIndex = Math.floor(Math.random() * 8);
         for (let i = 0; i < 8; i += 1) {
           const item = document.createElement("div");
           item.className = "find-item";
-          item.textContent = i === realIndex ? "⭐" : "✴️";
+          item.textContent = i === realIndex ? pair.real : pair.decoy;
           item.style.cssText = `left:${10 + (i % 4) * 22}%;top:${18 + Math.floor(i / 4) * 30}%`;
           const drift = () => {
             item.style.transform = `translate(${Math.random() * 16 - 8}px,${Math.random() * 16 - 8}px) rotate(${Math.random() * 20 - 10}deg)`;
