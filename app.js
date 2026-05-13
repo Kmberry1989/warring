@@ -1,0 +1,2224 @@
+const $ = (selector) => document.querySelector(selector);
+
+const SIGNALING_BASE =
+  window.WARRING_SIGNALING_BASE ||
+  document.querySelector('meta[name="warring-signaling-base"]')?.content ||
+  "/api";
+
+const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+const TOTAL_ROUNDS = 9;
+const SOLO_LIVES = 10;
+const HOST_POLL_MS = 1000;
+
+const refs = {
+  app: $("#app"),
+  lobby: $("#lobby"),
+  game: $("#game"),
+  gameArea: $("#gameArea"),
+  soloBtn: $("#soloBtn"),
+  hostBtn: $("#hostBtn"),
+  joinBtn: $("#joinBtn"),
+  hostPanel: $("#hostPanel"),
+  joinPanel: $("#joinPanel"),
+  createRoomBtn: $("#createRoomBtn"),
+  hostResetBtn: $("#hostResetBtn"),
+  joinResetBtn: $("#joinResetBtn"),
+  copyCodeBtn: $("#copyCodeBtn"),
+  copyLinkBtn: $("#copyLinkBtn"),
+  joinRoomBtn: $("#joinRoomBtn"),
+  roomCodeDisplay: $("#roomCodeDisplay"),
+  joinLinkDisplay: $("#joinLinkDisplay"),
+  roomCodeInput: $("#roomCodeInput"),
+  stat: $("#stat"),
+  hudLeft: $("#hud-left"),
+  hudMid: $("#hud-mid"),
+  hudRight: $("#hud-right"),
+  myScore: $("#ms"),
+  roundNumber: $("#rn"),
+  oppScore: $("#os"),
+};
+
+const appState = {
+  signalingBase: SIGNALING_BASE,
+  roomCode: null,
+  joinUrl: null,
+};
+
+const audio = (() => {
+  let actx;
+  let bgmGain;
+  let sfxGain;
+  let bgmTempo = 220;
+  let bgmStep = 0;
+  let bgmTimer = 0;
+
+  function init() {
+    if (actx) return;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    bgmGain = actx.createGain();
+    bgmGain.gain.value = 0.04;
+    bgmGain.connect(actx.destination);
+    sfxGain = actx.createGain();
+    sfxGain.gain.value = 0.15;
+    sfxGain.connect(actx.destination);
+    playBgmLoop();
+  }
+
+  function playBgmLoop() {
+    if (!actx) return;
+    clearTimeout(bgmTimer);
+    const notes = [220, 261.63, 329.63, 392, 440, 523.25];
+    const tick = () => {
+      if (!actx) return;
+      if (actx.state === "suspended") actx.resume();
+      const oscillator = actx.createOscillator();
+      const gain = actx.createGain();
+      oscillator.type = "triangle";
+      oscillator.frequency.value = notes[bgmStep % notes.length];
+      if (Math.random() > 0.9) oscillator.frequency.value *= 1.5;
+      gain.gain.setValueAtTime(1, actx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.15);
+      oscillator.connect(gain);
+      gain.connect(bgmGain);
+      oscillator.start();
+      oscillator.stop(actx.currentTime + 0.15);
+      bgmStep += 1;
+      bgmTimer = window.setTimeout(tick, bgmTempo);
+    };
+    tick();
+  }
+
+  function playSfx(freq, durationMs, volume = 1, type = "square") {
+    try {
+      if (!actx) init();
+      if (actx.state === "suspended") actx.resume();
+      const oscillator = actx.createOscillator();
+      const gain = actx.createGain();
+      oscillator.type = type;
+      oscillator.frequency.value = freq;
+      gain.gain.setValueAtTime(volume, actx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + durationMs / 1000);
+      oscillator.connect(gain);
+      gain.connect(sfxGain);
+      oscillator.start();
+      oscillator.stop(actx.currentTime + durationMs / 1000);
+    } catch (_error) {
+      // Audio failure is non-fatal for gameplay.
+    }
+  }
+
+  document.addEventListener("pointerdown", init, { once: true });
+
+  return {
+    setTempo(nextTempo) {
+      bgmTempo = nextTempo;
+    },
+    click() {
+      playSfx(600, 50, 0.5, "sine");
+    },
+    win() {
+      playSfx(800, 100, 0.8, "square");
+      setTimeout(() => playSfx(1200, 200, 0.8, "square"), 100);
+    },
+    lose() {
+      playSfx(300, 200, 0.8, "sawtooth");
+      setTimeout(() => playSfx(250, 300, 0.8, "sawtooth"), 150);
+    },
+    round() {
+      playSfx(800, 70, 0.5, "sine");
+    },
+    note(freq, duration, volume, type) {
+      playSfx(freq, duration, volume, type);
+    },
+  };
+})();
+
+const fx = (() => {
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText =
+    "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:999;";
+  refs.app.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  const particles = [];
+
+  function resize() {
+    canvas.width = refs.app.offsetWidth;
+    canvas.height = refs.app.offsetHeight;
+  }
+
+  function spawn(x, y, isWin) {
+    const colors = ["#FFD400", "#7B2CF5", "#00E676", "#FF1744", "#00B0FF", "#FFFFFF"];
+    const amount = isWin ? 60 : 20;
+    for (let i = 0; i < amount; i += 1) {
+      particles.push({
+        x: x ?? canvas.width / 2,
+        y: y ?? canvas.height / 2,
+        vx: (Math.random() - 0.5) * (isWin ? 25 : 15),
+        vy: (Math.random() - 0.5) * (isWin ? 25 : 15) - (isWin ? 8 : 2),
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: Math.random() * 8 + 5,
+        life: 1,
+        type: isWin ? "fw" : "conf",
+      });
+    }
+  }
+
+  function loop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let i = particles.length - 1; i >= 0; i -= 1) {
+      const particle = particles[i];
+      particle.x += particle.vx;
+      particle.y += particle.vy;
+      particle.vy += particle.type === "fw" ? 0.5 : 0.2;
+      particle.life -= 0.015;
+      ctx.globalAlpha = Math.max(0, particle.life);
+      ctx.fillStyle = particle.color;
+      ctx.beginPath();
+      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fill();
+      if (particle.life <= 0) particles.splice(i, 1);
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(loop);
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
+  loop();
+
+  window.setInterval(() => {
+    if (refs.lobby.classList.contains("active")) {
+      spawn(Math.random() * canvas.width, Math.random() * canvas.height * 0.7, Math.random() > 0.5);
+    }
+  }, 1200);
+
+  return {
+    canvas,
+    spawn,
+  };
+})();
+
+function setStatus(message, tone = "") {
+  refs.stat.textContent = message;
+  refs.stat.className = tone;
+}
+
+function setLobbyMode(mode) {
+  refs.hostPanel.classList.toggle("active", mode === "host");
+  refs.joinPanel.classList.toggle("active", mode === "join");
+  refs.hostBtn.classList.toggle("hidden", mode !== null);
+  refs.joinBtn.classList.toggle("hidden", mode !== null);
+  refs.soloBtn.classList.toggle("hidden", mode !== null);
+}
+
+function showScreen(name) {
+  refs.lobby.classList.toggle("active", name === "lobby");
+  refs.game.classList.toggle("active", name === "game");
+}
+
+async function copyText(text, successMessage) {
+  if (!text) return;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setStatus(successMessage, "success");
+  } catch (_error) {
+    setStatus("Copy failed. Long-press and copy manually.", "warn");
+  }
+}
+
+function randomId(length) {
+  let value = "";
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  for (let i = 0; i < length; i += 1) {
+    value += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return value;
+}
+
+function parseRoomFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const room = params.get("room");
+  return room ? room.toUpperCase() : "";
+}
+
+function updateHud(mode, state) {
+  if (mode === "solo") {
+    refs.hudLeft.innerHTML = `WINS <b id="ms">${state.myScore}</b>`;
+    refs.hudMid.innerHTML =
+      'SPD<br><b id="spd" style="color:#fff;font-size:18px">' +
+      (state.lastTime ? state.lastTime.toFixed(2) : "--") +
+      "</b>s";
+    refs.hudRight.innerHTML = `LIVES <b id="os">${state.oppScore}</b>`;
+    refs.myScore = $("#ms");
+    refs.oppScore = $("#os");
+    return;
+  }
+  refs.hudLeft.innerHTML = `YOU <b id="ms">${state.myScore}</b>`;
+  refs.hudMid.innerHTML = `R<b id="rn">${state.round}</b>/${TOTAL_ROUNDS}`;
+  refs.hudRight.innerHTML = `OPP <b id="os">${state.oppScore}</b>`;
+  refs.myScore = $("#ms");
+  refs.roundNumber = $("#rn");
+  refs.oppScore = $("#os");
+}
+
+class SignalingClient {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl.replace(/\/$/, "");
+  }
+
+  async request(path, options = {}) {
+    const response = await fetch(this.baseUrl + path, {
+      headers: {
+        "content-type": "application/json",
+        ...(options.headers || {}),
+      },
+      ...options,
+    });
+
+    if (!response.ok) {
+      let error = "Request failed";
+      try {
+        const data = await response.json();
+        error = data.error || error;
+      } catch (_error) {
+        error = response.statusText || error;
+      }
+      throw new Error(error);
+    }
+
+    if (response.status === 204) return null;
+    return response.json();
+  }
+
+  async createRoom(offer) {
+    return this.request("/rooms", {
+      method: "POST",
+      body: JSON.stringify({ offer }),
+    });
+  }
+
+  async getOffer(roomId) {
+    return this.request(`/rooms/${roomId}`);
+  }
+
+  async submitAnswer(roomId, answer) {
+    return this.request(`/rooms/${roomId}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ answer }),
+    });
+  }
+
+  async waitForAnswer(roomId) {
+    return this.request(`/rooms/${roomId}/answer`);
+  }
+}
+
+class PeerTransport {
+  constructor() {
+    this.pc = null;
+    this.dc = null;
+    this.onopen = null;
+    this.onmessage = null;
+    this.onclose = null;
+  }
+
+  async host({ signaling, roomReady, status }) {
+    this.cleanup();
+    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this.dc = this.pc.createDataChannel("warring");
+    this.bindChannel(this.dc);
+    status("creating room");
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    await this.waitForIce();
+    const created = await signaling.createRoom(this.pc.localDescription.toJSON());
+    roomReady(created);
+    status("waiting for player");
+    await this.pollForAnswer(signaling, created.roomId, status);
+  }
+
+  async join({ signaling, roomId, status }) {
+    this.cleanup();
+    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this.pc.ondatachannel = (event) => this.bindChannel(event.channel);
+    status("joining");
+    const payload = await signaling.getOffer(roomId);
+    await this.pc.setRemoteDescription(payload.offer);
+    const answer = await this.pc.createAnswer();
+    await this.pc.setLocalDescription(answer);
+    await this.waitForIce();
+    await signaling.submitAnswer(roomId, this.pc.localDescription.toJSON());
+    status("connecting");
+  }
+
+  bindChannel(channel) {
+    this.dc = channel;
+    this.dc.onopen = () => this.onopen?.();
+    this.dc.onclose = () => this.onclose?.();
+    this.dc.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        this.onmessage?.(parsed);
+      } catch (_error) {
+        // Ignore malformed packets.
+      }
+    };
+  }
+
+  async pollForAnswer(signaling, roomId, status) {
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, HOST_POLL_MS));
+      try {
+        const payload = await signaling.waitForAnswer(roomId);
+        if (payload?.answer) {
+          status("connecting");
+          await this.pc.setRemoteDescription(payload.answer);
+          return;
+        }
+      } catch (error) {
+        if (error.message === "waiting_for_player") {
+          status("waiting for player");
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  async waitForIce() {
+    if (!this.pc || this.pc.iceGatheringState === "complete") return;
+    await new Promise((resolve) => {
+      const handler = () => {
+        if (this.pc.iceGatheringState === "complete") {
+          this.pc.removeEventListener("icegatheringstatechange", handler);
+          resolve();
+        }
+      };
+      this.pc.addEventListener("icegatheringstatechange", handler);
+    });
+  }
+
+  send(message) {
+    if (this.dc?.readyState === "open") {
+      this.dc.send(JSON.stringify(message));
+    }
+  }
+
+  cleanup() {
+    if (this.dc) {
+      this.dc.onopen = null;
+      this.dc.onmessage = null;
+      this.dc.onclose = null;
+      try {
+        this.dc.close();
+      } catch (_error) {
+        // Ignore close errors.
+      }
+    }
+    if (this.pc) {
+      try {
+        this.pc.close();
+      } catch (_error) {
+        // Ignore close errors.
+      }
+    }
+    this.dc = null;
+    this.pc = null;
+  }
+}
+
+function createRoundScope(area) {
+  const disposers = [];
+  const addDisposer = (fn) => {
+    disposers.push(fn);
+    return fn;
+  };
+
+  return {
+    area,
+    addCleanup(fn) {
+      addDisposer(fn);
+    },
+    setTimeout(fn, ms) {
+      const id = window.setTimeout(fn, ms);
+      addDisposer(() => clearTimeout(id));
+      return id;
+    },
+    setInterval(fn, ms) {
+      const id = window.setInterval(fn, ms);
+      addDisposer(() => clearInterval(id));
+      return id;
+    },
+    onPointerMove(target, handler) {
+      target.addEventListener("pointermove", handler);
+      addDisposer(() => target.removeEventListener("pointermove", handler));
+    },
+    onPointerUp(target, handler) {
+      target.addEventListener("pointerup", handler);
+      target.addEventListener("pointercancel", handler);
+      addDisposer(() => {
+        target.removeEventListener("pointerup", handler);
+        target.removeEventListener("pointercancel", handler);
+      });
+    },
+    dispose() {
+      while (disposers.length) {
+        const disposer = disposers.pop();
+        disposer();
+      }
+      area.replaceChildren();
+    },
+  };
+}
+
+function finishOnce(scope, resolve) {
+  let done = false;
+  return (result) => {
+    if (done) return;
+    done = true;
+    scope.dispose();
+    resolve(result);
+  };
+}
+
+function createGameContext(runtime, round, scope) {
+  return {
+    area: refs.gameArea,
+    round,
+    scope,
+    audio,
+    fx,
+    randomId,
+    setHtml(html) {
+      refs.gameArea.innerHTML = html;
+    },
+    css(element, styles) {
+      Object.assign(element.style, styles);
+    },
+    buttonBurst(event, element) {
+      const rect = element.getBoundingClientRect();
+      fx.spawn(event.clientX - rect.left + element.offsetLeft, event.clientY - rect.top + element.offsetTop, false);
+    },
+    click() {
+      audio.click();
+    },
+    note(freq, duration, volume, type) {
+      audio.note(freq, duration, volume, type);
+    },
+    runtime,
+  };
+}
+
+function createGames() {
+  const games = {};
+
+  games.fly = {
+    id: "fly",
+    prompt: "TAP!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML = '<div class="fly">🪰</div>';
+        const fly = ctx.area.firstElementChild;
+        const move = () => {
+          fly.style.left = Math.random() * 80 + "%";
+          fly.style.top = Math.random() * 70 + "%";
+        };
+        move();
+        ctx.scope.setInterval(move, 400);
+        fly.onclick = () => {
+          ctx.click();
+          done({ won: true });
+        };
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  games.dont = {
+    id: "dont",
+    prompt: "DON'T!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML = '<div class="dontbtn" style="background:var(--r)">DON\'T</div>';
+        let safe = true;
+        ctx.area.onpointerdown = () => {
+          safe = false;
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointerdown = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: safe }), 3000);
+      });
+    },
+  };
+
+  games.pop = {
+    id: "pop",
+    prompt: "POP!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        let popped = 0;
+        for (let i = 0; i < 7; i += 1) {
+          const balloon = document.createElement("div");
+          balloon.className = "balloon";
+          balloon.textContent = "🎈";
+          balloon.style.left = 5 + i * 13 + "%";
+          balloon.style.bottom = "-20%";
+          balloon.style.animationDelay = i * 0.2 + "s";
+          balloon.onclick = () => {
+            ctx.click();
+            balloon.style.transform = "scale(0)";
+            balloon.remove();
+            popped += 1;
+            if (popped >= 7) done({ won: true });
+          };
+          ctx.area.appendChild(balloon);
+        }
+        ctx.scope.setTimeout(() => done({ won: popped >= 7 }), 3800);
+      });
+    },
+  };
+
+  games.catch = {
+    id: "catch",
+    prompt: "CATCH!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML = '<div style="position:absolute;bottom:20px;font-size:15vw;left:50%;transform:translateX(-50%)">🧺</div>';
+        const basket = ctx.area.firstElementChild;
+        let x = 50;
+        let caught = 0;
+        const move = (event) => {
+          const point = event.touches ? event.touches[0] : event;
+          const rect = ctx.area.getBoundingClientRect();
+          x = ((point.clientX - rect.left) / rect.width) * 100;
+          basket.style.left = x + "%";
+        };
+        ctx.area.onpointermove = move;
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointermove = null;
+        });
+        const drop = () => {
+          const toast = document.createElement("div");
+          toast.textContent = "🍞";
+          toast.style.cssText = `position:absolute;font-size:12vw;left:${Math.random() * 70 + 15}%;top:0%`;
+          ctx.area.appendChild(toast);
+          let y = 0;
+          const fall = ctx.scope.setInterval(() => {
+            y += 2.5;
+            toast.style.top = y + "%";
+            if (y > 75 && Math.abs(parseFloat(toast.style.left) - x) < 15) {
+              clearInterval(fall);
+              toast.remove();
+              caught += 1;
+              ctx.click();
+              if (caught >= 3) done({ won: true });
+            }
+            if (y > 95) {
+              clearInterval(fall);
+              toast.remove();
+            }
+          }, 30);
+        };
+        drop();
+        ctx.scope.setInterval(drop, 700);
+        ctx.scope.setTimeout(() => done({ won: caught >= 3 }), 4000);
+      });
+    },
+  };
+
+  games.dodge = {
+    id: "dodge",
+    prompt: "DODGE!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;bottom:24px;font-size:14vw;left:50%;transform:translateX(-50%)">🏃</div>';
+        const player = ctx.area.firstElementChild;
+        let x = 50;
+        let hit = false;
+        const move = (event) => {
+          const point = event.touches ? event.touches[0] : event;
+          const rect = ctx.area.getBoundingClientRect();
+          x = ((point.clientX - rect.left) / rect.width) * 100;
+          player.style.left = x + "%";
+        };
+        ctx.area.onpointermove = move;
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointermove = null;
+        });
+        const drop = () => {
+          const banana = document.createElement("div");
+          banana.textContent = "🍌";
+          banana.style.cssText = `position:absolute;font-size:11vw;left:${Math.random() * 80 + 10}%;top:0%`;
+          ctx.area.appendChild(banana);
+          let y = 0;
+          const fall = ctx.scope.setInterval(() => {
+            y += 3;
+            banana.style.top = y + "%";
+            if (y > 70 && Math.abs(parseFloat(banana.style.left) - x) < 12) hit = true;
+            if (y > 100) {
+              clearInterval(fall);
+              banana.remove();
+            }
+          }, 30);
+        };
+        ctx.scope.setInterval(drop, 500);
+        ctx.scope.setTimeout(() => done({ won: !hit }), 3500);
+      });
+    },
+  };
+
+  games.swipe = {
+    id: "swipe",
+    prompt: "SWIPE!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        const dirs = [
+          ["→", "right"],
+          ["←", "left"],
+          ["↑", "up"],
+          ["↓", "down"],
+        ];
+        const direction = dirs[Math.floor(Math.random() * dirs.length)];
+        ctx.area.innerHTML = `<div class="instr" style="font-size:clamp(60px,30vw,150px)">${direction[0]}</div>`;
+        let sx = 0;
+        let sy = 0;
+        ctx.area.onpointerdown = (event) => {
+          sx = event.clientX;
+          sy = event.clientY;
+        };
+        ctx.area.onpointerup = (event) => {
+          const dx = event.clientX - sx;
+          const dy = event.clientY - sy;
+          let dir = "";
+          if (Math.abs(dx) > Math.abs(dy)) dir = dx > 30 ? "right" : "left";
+          else dir = dy > 30 ? "down" : "up";
+          done({ won: dir === direction[1] });
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointerdown = null;
+          ctx.area.onpointerup = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 2200);
+      });
+    },
+  };
+
+  games.triple = {
+    id: "triple",
+    prompt: "CLICK!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML = '<div class="dontbtn" style="background:var(--b)">0</div>';
+        const btn = ctx.area.firstElementChild;
+        let count = 0;
+        btn.onclick = () => {
+          count += 1;
+          ctx.click();
+          btn.textContent = String(count);
+          btn.style.transform = `translate(-50%, -50%) scale(${1 - count * 0.05})`;
+          if (count === 3) done({ won: true });
+        };
+        ctx.scope.setTimeout(() => done({ won: count === 3 }), 2500);
+      });
+    },
+  };
+
+  games.hold = {
+    id: "hold",
+    prompt: "HOLD!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div class="dontbtn" style="background:#0a0;overflow:hidden"><div id="hf" style="position:absolute;bottom:0;left:0;width:100%;height:0%;background:rgba(255,255,255,0.4);transition:height 1.8s linear;pointer-events:none"></div><span id="ht" style="z-index:2">HOLD</span></div>';
+        const button = ctx.area.firstElementChild;
+        const fill = $("#hf");
+        const label = $("#ht");
+        let start = 0;
+        let timer = 0;
+        const down = () => {
+          if (start) return;
+          start = Date.now();
+          ctx.click();
+          fill.style.height = "100%";
+          timer = window.setTimeout(() => {
+            label.textContent = "LET GO!";
+            button.style.transform = "translate(-50%, -50%) scale(1.15)";
+            ctx.note(1200, 100, 0.6, "sine");
+          }, 1800);
+        };
+        const up = () => {
+          if (!start) return;
+          clearTimeout(timer);
+          done({ won: Date.now() - start > 1800 });
+          start = 0;
+        };
+        button.onpointerdown = down;
+        button.onpointerup = up;
+        button.onpointerleave = up;
+        ctx.scope.addCleanup(() => {
+          clearTimeout(timer);
+          button.onpointerdown = null;
+          button.onpointerup = null;
+          button.onpointerleave = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 3200);
+      });
+    },
+  };
+
+  games.mash = {
+    id: "mash",
+    prompt: "MASH!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML = '<div class="dontbtn" style="background:var(--p)">0</div>';
+        const btn = ctx.area.firstElementChild;
+        let count = 0;
+        btn.onclick = () => {
+          count += 1;
+          ctx.click();
+          btn.textContent = String(count);
+          btn.style.transform = `translate(-50%, -50%) scale(${1 + count * 0.04})`;
+          if (count >= 12) done({ won: true });
+        };
+        ctx.scope.setTimeout(() => done({ won: count >= 12 }), 3200);
+      });
+    },
+  };
+
+  games.trace = {
+    id: "trace",
+    prompt: "CIRCLE!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<canvas id="cv" width="300" height="300" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vw;touch-action:none"></canvas>';
+        const canvas = $("#cv");
+        const draw = canvas.getContext("2d");
+        draw.lineWidth = 12;
+        draw.strokeStyle = "#fff";
+        draw.beginPath();
+        draw.arc(150, 150, 100, 0, Math.PI * 2);
+        draw.stroke();
+        draw.globalCompositeOperation = "destination-out";
+        let dragging = false;
+        let passes = 0;
+        const handle = (event) => {
+          if (!dragging) return;
+          const rect = canvas.getBoundingClientRect();
+          const point = event.touches ? event.touches[0] : event;
+          const x = ((point.clientX - rect.left) * 300) / rect.width;
+          const y = ((point.clientY - rect.top) * 300) / rect.height;
+          draw.beginPath();
+          draw.arc(x, y, 20, 0, Math.PI * 2);
+          draw.fill();
+          passes += 1;
+          if (passes % 5 === 0) ctx.click();
+        };
+        canvas.onpointerdown = () => {
+          dragging = true;
+        };
+        canvas.onpointerup = () => {
+          dragging = false;
+        };
+        canvas.onpointermove = handle;
+        ctx.scope.addCleanup(() => {
+          canvas.onpointerdown = null;
+          canvas.onpointerup = null;
+          canvas.onpointermove = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: passes > 60 }), 3000);
+      });
+    },
+  };
+
+  games.match = {
+    id: "match",
+    prompt: "PAIR!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        const items = ["🍎", "🍎", "🍌", "🍌", "🍇", "🍇"].sort(() => Math.random() - 0.5);
+        let open = null;
+        let found = 0;
+        items.forEach((value, index) => {
+          const item = document.createElement("div");
+          item.className = "find-item";
+          item.textContent = "❓";
+          item.style.cssText = `left:${15 + (index % 3) * 28}%;top:${20 + Math.floor(index / 3) * 35}%`;
+          item.onclick = () => {
+            ctx.click();
+            item.textContent = value;
+            if (!open) {
+              open = item;
+              return;
+            }
+            if (open !== item && open.textContent === value) {
+              found += 1;
+              open = null;
+              if (found === 3) done({ won: true });
+              return;
+            }
+            const other = open;
+            open = null;
+            ctx.scope.setTimeout(() => {
+              item.textContent = "❓";
+              other.textContent = "❓";
+            }, 350);
+          };
+          ctx.area.appendChild(item);
+        });
+        ctx.scope.setTimeout(() => done({ won: found === 3 }), 4000);
+      });
+    },
+  };
+
+  games.avoid = {
+    id: "avoid",
+    prompt: "GREEN!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        let safe = true;
+        let greens = 0;
+        for (let i = 0; i < 12; i += 1) {
+          const green = Math.random() > 0.7;
+          if (green) greens += 1;
+          const item = document.createElement("div");
+          item.className = "find-item";
+          item.textContent = green ? "🟢" : "🔴";
+          item.style.cssText = `left:${Math.random() * 75 + 5}%;top:${Math.random() * 65 + 10}%`;
+          item.onclick = () => {
+            ctx.click();
+            if (!green) {
+              safe = false;
+              done({ won: false });
+              return;
+            }
+            item.remove();
+            greens -= 1;
+            if (greens <= 0) done({ won: safe });
+          };
+          ctx.area.appendChild(item);
+        }
+        ctx.scope.setTimeout(() => done({ won: safe && greens <= 0 }), 3000);
+      });
+    },
+  };
+
+  games.pump = {
+    id: "pump",
+    prompt: "PUMP!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="font-size:20vw;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.6)">🎈</div>';
+        const balloon = ctx.area.firstElementChild;
+        let size = 0.6;
+        ctx.area.onclick = () => {
+          ctx.click();
+          size += 0.12;
+          balloon.style.transform = `translate(-50%,-50%) scale(${size})`;
+          if (size > 1.8) done({ won: true });
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onclick = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: size > 1.8 }), 3000);
+      });
+    },
+  };
+
+  games.whack = {
+    id: "whack",
+    prompt: "WHACK!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        let hits = 0;
+        for (let i = 0; i < 9; i += 1) {
+          const hole = document.createElement("div");
+          hole.style.cssText =
+            `position:absolute;width:24%;height:22%;left:${8 + (i % 3) * 30}%;top:${10 + Math.floor(i / 3) * 28}%;` +
+            "background:#630;border-radius:50%";
+          ctx.area.appendChild(hole);
+        }
+        const spawn = () => {
+          const hole = ctx.area.children[Math.floor(Math.random() * 9)];
+          hole.innerHTML =
+            '<div style="font-size:14vw;cursor:pointer;text-align:center;margin-top:10%">🐹</div>';
+          hole.firstElementChild.onclick = () => {
+            ctx.click();
+            hits += 1;
+            hole.innerHTML = "";
+            if (hits >= 3) done({ won: true });
+          };
+          ctx.scope.setTimeout(() => {
+            hole.innerHTML = "";
+          }, 800);
+        };
+        ctx.scope.setInterval(spawn, 600);
+        ctx.scope.setTimeout(() => done({ won: hits >= 3 }), 3500);
+      });
+    },
+  };
+
+  games.stop = {
+    id: "stop",
+    prompt: "STOP!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;left:10%;top:45%;width:80%;height:30px;background:#444;border:3px solid #000">' +
+          '<div style="position:absolute;left:40%;width:20%;height:100%;background:#0f0"></div>' +
+          '<div id="pt" style="position:absolute;left:0%;width:10px;height:40px;background:#fff;top:-5px"></div></div>';
+        const pointer = $("#pt");
+        let x = 0;
+        let direction = 1;
+        const ticker = ctx.scope.setInterval(() => {
+          x += direction * 2;
+          if (x > 100 || x < 0) direction *= -1;
+          pointer.style.left = x + "%";
+        }, 20);
+        ctx.area.onclick = () => {
+          clearInterval(ticker);
+          done({ won: x > 38 && x < 62 });
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onclick = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 3000);
+      });
+    },
+  };
+
+  games.drag = {
+    id: "drag",
+    prompt: "DRAG!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div id="board" style="position:absolute;left:70%;top:30%;font-size:16vw">🎯</div>' +
+          '<div id="st" style="position:absolute;left:20%;top:60%;font-size:14vw;cursor:pointer;touch-action:none">📍</div>';
+        const star = $("#st");
+        const board = $("#board");
+        let dragging = false;
+        const move = (event) => {
+          if (!dragging) return;
+          const rect = ctx.area.getBoundingClientRect();
+          const point = event.touches ? event.touches[0] : event;
+          const x = point.clientX - rect.left;
+          const y = point.clientY - rect.top;
+          star.style.left = x - 30 + "px";
+          star.style.top = y - 30 + "px";
+          const targetRect = board.getBoundingClientRect();
+          if (
+            Math.hypot(
+              point.clientX - (targetRect.left + targetRect.width / 2),
+              point.clientY - (targetRect.top + targetRect.height / 2)
+            ) < 50
+          ) {
+            dragging = false;
+            done({ won: true });
+          }
+        };
+        const up = () => {
+          dragging = false;
+        };
+        star.onpointerdown = () => {
+          dragging = true;
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+        ctx.scope.addCleanup(() => {
+          star.onpointerdown = null;
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  games.scratch = {
+    id: "scratch",
+    prompt: "SCRATCH!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;inset:20%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12vw;border:4px solid #000">💎</div>' +
+          '<canvas id="sc" width="300" height="300" style="position:absolute;inset:20%;width:60%;height:60%"></canvas>';
+        const canvas = $("#sc");
+        const draw = canvas.getContext("2d");
+        draw.fillStyle = "#999";
+        draw.fillRect(0, 0, 300, 300);
+        draw.globalCompositeOperation = "destination-out";
+        let passes = 0;
+        canvas.onpointermove = (event) => {
+          const rect = canvas.getBoundingClientRect();
+          const x = ((event.clientX - rect.left) * 300) / rect.width;
+          const y = ((event.clientY - rect.top) * 300) / rect.height;
+          draw.beginPath();
+          draw.arc(x, y, 25, 0, Math.PI * 2);
+          draw.fill();
+          passes += 1;
+          if (passes % 5 === 0) ctx.click();
+          if (passes > 70) done({ won: true });
+        };
+        ctx.scope.addCleanup(() => {
+          canvas.onpointermove = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  games.find = {
+    id: "find",
+    prompt: "FIND!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        const emojis = ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣"];
+        const base = emojis[Math.floor(Math.random() * emojis.length)];
+        let odd = base;
+        while (odd === base) odd = emojis[Math.floor(Math.random() * emojis.length)];
+        const oddIndex = Math.floor(Math.random() * 12);
+        for (let i = 0; i < 12; i += 1) {
+          const item = document.createElement("div");
+          item.className = "find-item";
+          item.textContent = i === oddIndex ? odd : base;
+          item.style.cssText = `left:${10 + (i % 4) * 22}%;top:${20 + Math.floor(i / 4) * 22}%`;
+          item.onclick = () => done({ won: i === oddIndex });
+          ctx.area.appendChild(item);
+        }
+        ctx.scope.setTimeout(() => done({ won: false }), 4000);
+      });
+    },
+  };
+
+  games.feed = {
+    id: "feed",
+    prompt: "FEED!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div id="m" style="position:absolute;right:10%;top:40%;font-size:16vw">😮</div>' +
+          '<div id="f" style="position:absolute;left:10%;top:40%;font-size:12vw;cursor:pointer;touch-action:none">🍔</div>';
+        const food = $("#f");
+        const mouth = $("#m");
+        let dragging = false;
+        const move = (event) => {
+          if (!dragging) return;
+          const rect = ctx.area.getBoundingClientRect();
+          const point = event.touches ? event.touches[0] : event;
+          food.style.left = point.clientX - rect.left - 30 + "px";
+          food.style.top = point.clientY - rect.top - 30 + "px";
+          const mouthRect = mouth.getBoundingClientRect();
+          if (
+            Math.hypot(
+              point.clientX - (mouthRect.left + mouthRect.width / 2),
+              point.clientY - (mouthRect.top + mouthRect.height / 2)
+            ) < 60
+          ) {
+            mouth.textContent = "😋";
+            dragging = false;
+            done({ won: true });
+          }
+        };
+        const up = () => {
+          dragging = false;
+        };
+        food.onpointerdown = () => {
+          dragging = true;
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+        ctx.scope.addCleanup(() => {
+          food.onpointerdown = null;
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  games.order = {
+    id: "order",
+    prompt: "1-2-3!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        let current = 1;
+        const zones = [
+          { x: 15, y: 20 },
+          { x: 65, y: 45 },
+          { x: 25, y: 70 },
+        ].sort(() => Math.random() - 0.5);
+        for (let i = 1; i <= 3; i += 1) {
+          const btn = document.createElement("div");
+          btn.style.cssText =
+            `position:absolute;left:${zones[i - 1].x}%;top:${zones[i - 1].y}%;width:20vw;height:20vw;` +
+            "background:var(--y);border:4px solid #000;border-radius:50%;display:flex;align-items:center;" +
+            "justify-content:center;font-size:10vw;font-weight:900;cursor:pointer";
+          btn.textContent = String(i);
+          btn.onclick = () => {
+            ctx.click();
+            if (i === current) {
+              btn.style.background = "#0E6";
+              current += 1;
+              if (current > 3) done({ won: true });
+            } else {
+              done({ won: false });
+            }
+          };
+          ctx.area.appendChild(btn);
+        }
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  games.jump = {
+    id: "jump",
+    prompt: "JUMP!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div id="p" style="position:absolute;left:20%;bottom:20%;font-size:14vw">🧍</div>' +
+          '<div id="o" style="position:absolute;left:100%;bottom:20%;font-size:12vw">🚕</div>';
+        const player = $("#p");
+        const obstacle = $("#o");
+        let velocity = 0;
+        let y = 20;
+        let ox = 100;
+        let jumping = false;
+        const loop = ctx.scope.setInterval(() => {
+          ox -= 2.5 + ctx.round * 0.1;
+          obstacle.style.left = ox + "%";
+          if (jumping) {
+            y += velocity;
+            velocity -= 1;
+          }
+          if (y <= 20) {
+            y = 20;
+            velocity = 0;
+            jumping = false;
+          }
+          player.style.bottom = y + "%";
+          if (ox < 35 && ox > 5 && y < 40) done({ won: false });
+          if (ox < -20) done({ won: true });
+        }, 30);
+        ctx.area.onpointerdown = () => {
+          if (!jumping) {
+            jumping = true;
+            velocity = 9;
+            ctx.click();
+          }
+        };
+        ctx.scope.addCleanup(() => {
+          clearInterval(loop);
+          ctx.area.onpointerdown = null;
+        });
+      });
+    },
+  };
+
+  games.slice = {
+    id: "slice",
+    prompt: "SLICE!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div id="m" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20vw;">🍉</div>';
+        let dragging = false;
+        ctx.area.onpointerdown = () => {
+          dragging = true;
+        };
+        ctx.area.onpointermove = (event) => {
+          if (!dragging) return;
+          const rect = $("#m").getBoundingClientRect();
+          if (
+            event.clientX > rect.left &&
+            event.clientX < rect.right &&
+            event.clientY > rect.top &&
+            event.clientY < rect.bottom
+          ) {
+            ctx.click();
+            $("#m").textContent = "🔪🍉";
+            done({ won: true });
+          }
+        };
+        ctx.area.onpointerup = () => {
+          dragging = false;
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointerdown = null;
+          ctx.area.onpointermove = null;
+          ctx.area.onpointerup = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  games.scrub = {
+    id: "scrub",
+    prompt: "SCRUB!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        let dirtCount = 10 + Math.floor(ctx.round / 2);
+        for (let i = 0; i < dirtCount; i += 1) {
+          const dirt = document.createElement("div");
+          dirt.className = "dirt";
+          dirt.style.cssText = `position:absolute;width:${Math.random() * 40 + 40}px;height:${Math.random() * 40 + 40}px;background:#78350f;border-radius:50%;left:${Math.random() * 80 + 10}%;top:${Math.random() * 70 + 15}%`;
+          ctx.area.appendChild(dirt);
+        }
+        ctx.area.onpointermove = (event) => {
+          const target = document.elementFromPoint(event.clientX, event.clientY);
+          if (target?.classList.contains("dirt")) {
+            target.remove();
+            dirtCount -= 1;
+            if (dirtCount % 3 === 0) ctx.click();
+            if (dirtCount <= 0) done({ won: true });
+          }
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointermove = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 4000);
+      });
+    },
+  };
+
+  games.math = {
+    id: "math",
+    prompt: "SOLVE!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        const n1 = Math.floor(Math.random() * 5) + 1;
+        const n2 = Math.floor(Math.random() * 5) + 1;
+        const answer = n1 + n2;
+        const options = [answer, answer + 1, answer - 1].sort(() => Math.random() - 0.5);
+        ctx.area.innerHTML = `<div style="text-align:center;font-size:15vw;margin-top:20%">${n1}+${n2}</div>`;
+        options.forEach((value, index) => {
+          const bubble = document.createElement("div");
+          bubble.style.cssText =
+            `position:absolute;left:${15 + index * 28}%;bottom:25%;width:20vw;height:20vw;` +
+            "background:var(--b);border-radius:50%;display:flex;align-items:center;" +
+            "justify-content:center;font-size:10vw;cursor:pointer";
+          bubble.textContent = String(value);
+          bubble.onclick = () => done({ won: value === answer });
+          ctx.area.appendChild(bubble);
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 4500);
+      });
+    },
+  };
+
+  games.shoot = {
+    id: "shoot",
+    prompt: "SHOOT!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div id="tg" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:15vw">👾</div>';
+        const target = $("#tg");
+        let x = 50;
+        let direction = 1;
+        const loop = ctx.scope.setInterval(() => {
+          x += direction * 3;
+          if (x > 80 || x < 20) direction *= -1;
+          target.style.left = x + "%";
+        }, 30);
+        target.onpointerdown = (event) => {
+          event.stopPropagation();
+          clearInterval(loop);
+          done({ won: true });
+        };
+        ctx.area.onpointerdown = () => {
+          clearInterval(loop);
+          done({ won: false });
+        };
+        ctx.scope.addCleanup(() => {
+          target.onpointerdown = null;
+          ctx.area.onpointerdown = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  games.simon = {
+    id: "simon",
+    prompt: "SIMON!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        const colors = ["#F14", "#0E6", "#0BF"];
+        const sequence = Array.from({ length: 3 }, () => Math.floor(Math.random() * 3));
+        let step = 0;
+        let listening = false;
+        const buttons = [];
+        for (let i = 0; i < 3; i += 1) {
+          const item = document.createElement("div");
+          item.style.cssText =
+            `position:absolute;left:${15 + i * 25}%;top:40%;width:20vw;height:20vw;` +
+            `background:${colors[i]};border-radius:15px;opacity:0.3`;
+          item.onclick = () => {
+            if (!listening) return;
+            ctx.click();
+            if (i === sequence[step]) {
+              step += 1;
+              if (step === sequence.length) done({ won: true });
+            } else {
+              done({ won: false });
+            }
+          };
+          buttons.push(item);
+          ctx.area.appendChild(item);
+        }
+        let flash = 0;
+        const show = ctx.scope.setInterval(() => {
+          if (flash >= sequence.length) {
+            clearInterval(show);
+            listening = true;
+            return;
+          }
+          const btn = buttons[sequence[flash]];
+          btn.style.opacity = "1";
+          ctx.note(400 + sequence[flash] * 200, 150, 0.5);
+          ctx.scope.setTimeout(() => {
+            btn.style.opacity = "0.3";
+          }, 200);
+          flash += 1;
+        }, 450);
+        ctx.scope.setTimeout(() => done({ won: false }), 4500);
+      });
+    },
+  };
+
+  games.rhythm = {
+    id: "rhythm",
+    prompt: "BEAT!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:120px;height:120px;border:8px solid #0E6;border-radius:50%"></div>' +
+          '<div id="rr" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:400px;height:400px;border:6px solid #fff;border-radius:50%;transition:all 2s linear"></div>';
+        ctx.scope.setTimeout(() => {
+          const ring = $("#rr");
+          if (ring) {
+            ring.style.width = "20px";
+            ring.style.height = "20px";
+          }
+        }, 50);
+        ctx.area.onpointerdown = () => {
+          const width = $("#rr").getBoundingClientRect().width;
+          done({ won: width > 90 && width < 150 });
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointerdown = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 2500);
+      });
+    },
+  };
+
+  games.mug = {
+    id: "mug",
+    prompt: "GRAB!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;left:0;top:70%;width:100%;height:10px;background:#743;border-top:4px solid #000"></div>' +
+          '<div style="position:absolute;right:10%;top:63%;width:15vw;height:5px;background:#0E6"></div>' +
+          '<div id="mug" style="position:absolute;left:-20%;top:50%;font-size:15vw">🍺</div>';
+        const mug = $("#mug");
+        let x = -20;
+        const move = ctx.scope.setInterval(() => {
+          x += 3 + ctx.round * 0.1;
+          mug.style.left = x + "%";
+          if (x > 110) done({ won: false });
+        }, 20);
+        ctx.area.onpointerdown = () => {
+          clearInterval(move);
+          done({ won: x > 72 && x < 88 });
+        };
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointerdown = null;
+        });
+      });
+    },
+  };
+
+  games.spy = {
+    id: "spy",
+    prompt: "FOLLOW!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div id="thief" style="position:absolute;font-size:12vw;transition:all 0.4s linear;left:50%;top:50%">🕵️</div>' +
+          '<div id="overlay" style="position:absolute;inset:0;background:radial-gradient(circle 80px at 50% 50%, transparent, #000 100%);pointer-events:none"></div>';
+        const thief = $("#thief");
+        const overlay = $("#overlay");
+        let tx = 50;
+        let ty = 50;
+        let px = 50;
+        let py = 50;
+        let score = 0;
+        const moveThief = () => {
+          tx = 10 + Math.random() * 80;
+          ty = 10 + Math.random() * 70;
+          thief.style.left = tx + "%";
+          thief.style.top = ty + "%";
+        };
+        const watch = (x, y) => {
+          const rect = ctx.area.getBoundingClientRect();
+          px = ((x - rect.left) / rect.width) * 100;
+          py = ((y - rect.top) / rect.height) * 100;
+          overlay.style.background = `radial-gradient(circle 80px at ${px}% ${py}%, transparent, #000 100%)`;
+        };
+        const move = (event) => {
+          const point = event.touches ? event.touches[0] : event;
+          watch(point.clientX, point.clientY);
+        };
+        moveThief();
+        ctx.scope.setInterval(moveThief, 600);
+        ctx.area.onpointermove = move;
+        ctx.scope.setInterval(() => {
+          if (Math.hypot(px - tx, py - ty) < 18) score += 1;
+        }, 100);
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointermove = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: score > 20 }), 4500);
+      });
+    },
+  };
+
+  games.stack = {
+    id: "stack",
+    prompt: "STACK!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div id="stackBase" style="position:absolute;left:20%;right:20%;bottom:10%;height:12px;background:#fff;border:3px solid #000"></div>' +
+          '<div id="stackMover" style="position:absolute;top:18%;left:0;width:22%;height:28px;background:var(--b);border:4px solid #000"></div>';
+        const mover = $("#stackMover");
+        let block = 0;
+        let direction = 1;
+        let x = 0;
+        let width = 22;
+        const placed = [];
+        const animate = ctx.scope.setInterval(() => {
+          x += direction * 2.2;
+          if (x < 0 || x + width > 100) direction *= -1;
+          mover.style.left = x + "%";
+          mover.style.width = width + "%";
+        }, 20);
+        ctx.area.onpointerdown = () => {
+          const base = block === 0 ? { left: 39, width: 22 } : placed[placed.length - 1];
+          const overlapLeft = Math.max(x, base.left);
+          const overlapRight = Math.min(x + width, base.left + base.width);
+          const overlap = overlapRight - overlapLeft;
+          if (overlap < 10) {
+            done({ won: false });
+            return;
+          }
+          const next = {
+            left: overlapLeft,
+            width: overlap,
+          };
+          placed.push(next);
+          const piece = document.createElement("div");
+          piece.style.cssText =
+            `position:absolute;left:${next.left}%;bottom:${10 + block * 8}%;width:${next.width}%;height:24px;` +
+            "background:var(--g);border:4px solid #000";
+          ctx.area.appendChild(piece);
+          block += 1;
+          width = overlap;
+          x = 0;
+          direction = 1;
+          mover.style.top = 18 - block * 2 + "%";
+          if (block >= 4) done({ won: true });
+        };
+        ctx.scope.addCleanup(() => {
+          clearInterval(animate);
+          ctx.area.onpointerdown = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+      });
+    },
+  };
+
+  games.balance = {
+    id: "balance",
+    prompt: "BALANCE!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;left:8%;right:8%;top:48%;height:20px;background:#333;border:4px solid #000">' +
+          '<div id="balanceZone" style="position:absolute;left:38%;width:24%;top:-4px;height:20px;background:var(--g)"></div>' +
+          '<div id="balanceMarker" style="position:absolute;left:48%;top:-10px;width:18px;height:38px;background:#fff;border:3px solid #000"></div></div>';
+        const zone = $("#balanceZone");
+        const marker = $("#balanceMarker");
+        let zoneX = 38;
+        let markerX = 48;
+        let direction = 1;
+        let heldMs = 0;
+        ctx.area.onpointermove = (event) => {
+          const rect = ctx.area.getBoundingClientRect();
+          markerX = ((event.clientX - rect.left) / rect.width) * 100;
+          marker.style.left = markerX + "%";
+        };
+        ctx.scope.setInterval(() => {
+          zoneX += direction * 1.4;
+          if (zoneX < 12 || zoneX > 64) direction *= -1;
+          zone.style.left = zoneX + "%";
+          const inZone = markerX > zoneX && markerX < zoneX + 24;
+          heldMs = inZone ? heldMs + 100 : Math.max(0, heldMs - 100);
+          if (heldMs >= 2000) done({ won: true });
+        }, 100);
+        ctx.scope.addCleanup(() => {
+          ctx.area.onpointermove = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+      });
+    },
+  };
+
+  games.sort = {
+    id: "sort",
+    prompt: "SORT!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;left:8%;bottom:8%;width:24%;height:24%;background:#ffe0e0;border:4px solid #000;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:10vw">🍎</div>' +
+          '<div style="position:absolute;left:38%;bottom:8%;width:24%;height:24%;background:#fff6cc;border:4px solid #000;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:10vw">🍌</div>' +
+          '<div style="position:absolute;left:68%;bottom:8%;width:24%;height:24%;background:#efe0ff;border:4px solid #000;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:10vw">🍇</div>';
+        const bins = [
+          { emoji: "🍎", left: 8, right: 32 },
+          { emoji: "🍌", left: 38, right: 62 },
+          { emoji: "🍇", left: 68, right: 92 },
+        ];
+        const items = ["🍎", "🍌", "🍇"];
+        let doneCount = 0;
+        items.forEach((emoji, index) => {
+          const item = document.createElement("div");
+          item.textContent = emoji;
+          item.style.cssText =
+            `position:absolute;left:${18 + index * 24}%;top:18%;font-size:12vw;touch-action:none;cursor:pointer`;
+          let dragging = false;
+          const move = (event) => {
+            if (!dragging) return;
+            const rect = ctx.area.getBoundingClientRect();
+            item.style.left = ((event.clientX - rect.left) / rect.width) * 100 + "%";
+            item.style.top = ((event.clientY - rect.top) / rect.height) * 100 + "%";
+          };
+          const up = (event) => {
+            if (!dragging) return;
+            dragging = false;
+            const rect = ctx.area.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 100;
+            const y = ((event.clientY - rect.top) / rect.height) * 100;
+            const match = bins.find((bin) => bin.emoji === emoji && x > bin.left && x < bin.right && y > 66);
+            if (match) {
+              item.remove();
+              doneCount += 1;
+              if (doneCount === 3) done({ won: true });
+            }
+          };
+          item.onpointerdown = () => {
+            dragging = true;
+          };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+          ctx.scope.addCleanup(() => {
+            item.onpointerdown = null;
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+          });
+          ctx.area.appendChild(item);
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+      });
+    },
+  };
+
+  games.zap = {
+    id: "zap",
+    prompt: "ZAP!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<canvas id="zapCanvas" width="320" height="420" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none"></canvas>';
+        const canvas = $("#zapCanvas");
+        const draw = canvas.getContext("2d");
+        const start = { x: 50, y: 80 };
+        const end = { x: 270, y: 340 };
+        const blockers = [
+          { x: 130, y: 170, r: 24 },
+          { x: 210, y: 250, r: 28 },
+          { x: 110, y: 290, r: 22 },
+        ];
+        const render = (path = []) => {
+          draw.clearRect(0, 0, canvas.width, canvas.height);
+          draw.fillStyle = "#0ff";
+          draw.beginPath();
+          draw.arc(start.x, start.y, 22, 0, Math.PI * 2);
+          draw.fill();
+          draw.fillStyle = "#ff0";
+          draw.beginPath();
+          draw.arc(end.x, end.y, 22, 0, Math.PI * 2);
+          draw.fill();
+          draw.fillStyle = "#f33";
+          blockers.forEach((blocker) => {
+            draw.beginPath();
+            draw.arc(blocker.x, blocker.y, blocker.r, 0, Math.PI * 2);
+            draw.fill();
+          });
+          if (path.length) {
+            draw.strokeStyle = "#fff";
+            draw.lineWidth = 10;
+            draw.beginPath();
+            draw.moveTo(path[0].x, path[0].y);
+            path.slice(1).forEach((point) => draw.lineTo(point.x, point.y));
+            draw.stroke();
+          }
+        };
+        let path = [];
+        let started = false;
+        const toCanvas = (event) => {
+          const rect = canvas.getBoundingClientRect();
+          return {
+            x: ((event.clientX - rect.left) * canvas.width) / rect.width,
+            y: ((event.clientY - rect.top) * canvas.height) / rect.height,
+          };
+        };
+        render();
+        canvas.onpointerdown = (event) => {
+          const point = toCanvas(event);
+          if (Math.hypot(point.x - start.x, point.y - start.y) < 30) {
+            started = true;
+            path = [point];
+          }
+        };
+        canvas.onpointermove = (event) => {
+          if (!started) return;
+          const point = toCanvas(event);
+          path.push(point);
+          render(path);
+          if (blockers.some((blocker) => Math.hypot(point.x - blocker.x, point.y - blocker.y) < blocker.r + 8)) {
+            done({ won: false });
+            return;
+          }
+          if (Math.hypot(point.x - end.x, point.y - end.y) < 30) {
+            done({ won: true });
+          }
+        };
+        canvas.onpointerup = () => {
+          started = false;
+        };
+        ctx.scope.addCleanup(() => {
+          canvas.onpointerdown = null;
+          canvas.onpointermove = null;
+          canvas.onpointerup = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 4500);
+      });
+    },
+  };
+
+  games.bounce = {
+    id: "bounce",
+    prompt: "BOUNCE!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        ctx.area.innerHTML =
+          '<div style="position:absolute;left:10%;right:10%;bottom:20%;height:6px;background:#f33"></div>' +
+          '<div id="bounceBall" style="position:absolute;left:46%;bottom:45%;font-size:12vw">🏀</div>' +
+          '<div id="bounceCount" style="position:absolute;top:10%;width:100%;text-align:center;font-size:10vw">0/6</div>';
+        const ball = $("#bounceBall");
+        const count = $("#bounceCount");
+        let height = 45;
+        let velocity = -1.4;
+        let beats = 0;
+        const loop = ctx.scope.setInterval(() => {
+          height += velocity;
+          velocity -= 0.18;
+          if (height <= 20) done({ won: false });
+          ball.style.bottom = height + "%";
+        }, 30);
+        ctx.area.onpointerdown = () => {
+          velocity = 3.8;
+          beats += 1;
+          ctx.note(600 + beats * 40, 80, 0.5, "sine");
+          count.textContent = `${beats}/6`;
+          if (beats >= 6) {
+            clearInterval(loop);
+            done({ won: true });
+          }
+        };
+        ctx.scope.addCleanup(() => {
+          clearInterval(loop);
+          ctx.area.onpointerdown = null;
+        });
+        ctx.scope.setTimeout(() => done({ won: false }), 5000);
+      });
+    },
+  };
+
+  games.decoy = {
+    id: "decoy",
+    prompt: "DECOY!",
+    start(ctx) {
+      return new Promise((resolve) => {
+        const done = finishOnce(ctx.scope, resolve);
+        const realIndex = Math.floor(Math.random() * 8);
+        for (let i = 0; i < 8; i += 1) {
+          const item = document.createElement("div");
+          item.className = "find-item";
+          item.textContent = i === realIndex ? "⭐" : "✴️";
+          item.style.cssText = `left:${10 + (i % 4) * 22}%;top:${18 + Math.floor(i / 4) * 30}%`;
+          const drift = () => {
+            item.style.transform = `translate(${Math.random() * 16 - 8}px,${Math.random() * 16 - 8}px) rotate(${Math.random() * 20 - 10}deg)`;
+          };
+          ctx.scope.setInterval(drift, 280 + i * 30);
+          item.onclick = () => done({ won: i === realIndex });
+          ctx.area.appendChild(item);
+        }
+        ctx.scope.setTimeout(() => done({ won: false }), 3500);
+      });
+    },
+  };
+
+  return games;
+}
+
+class MatchController {
+  constructor({ games, transport }) {
+    this.games = games;
+    this.transport = transport;
+    this.reset();
+  }
+
+  reset() {
+    this.mode = "solo";
+    this.role = "host";
+    this.round = 1;
+    this.lastGameId = "";
+    this.currentScope = null;
+    this.currentRound = null;
+    this.pendingLocal = new Map();
+    this.pendingRemote = new Map();
+    this.resolvedRounds = new Set();
+    this.myScore = 0;
+    this.oppScore = 0;
+    this.times = [];
+    this.ended = false;
+    this.gameTimer = 0;
+  }
+
+  enterSolo() {
+    this.reset();
+    this.mode = "solo";
+    this.myScore = 0;
+    this.oppScore = SOLO_LIVES;
+    updateHud("solo", this.currentHudState());
+    showScreen("game");
+    window.setTimeout(() => this.beginHostedRound(), 800);
+  }
+
+  attachVersus(role) {
+    this.reset();
+    this.mode = "versus";
+    this.role = role;
+    updateHud("versus", this.currentHudState());
+    showScreen("game");
+    if (role === "host") {
+      window.setTimeout(() => this.beginHostedRound(), 800);
+    }
+  }
+
+  currentHudState() {
+    return {
+      round: this.round,
+      myScore: this.myScore,
+      oppScore: this.oppScore,
+      lastTime: this.times[this.times.length - 1] || 0,
+    };
+  }
+
+  nextGameId() {
+    const ids = Object.keys(this.games);
+    let id = ids[Math.floor(Math.random() * ids.length)];
+    while (id === this.lastGameId) {
+      id = ids[Math.floor(Math.random() * ids.length)];
+    }
+    this.lastGameId = id;
+    return id;
+  }
+
+  beginHostedRound() {
+    if (this.ended) return;
+    if (this.mode === "solo") {
+      if (this.oppScore <= 0) {
+        this.endSolo();
+        return;
+      }
+      if (this.round > 1) {
+        updateHud("solo", this.currentHudState());
+      }
+      const gameId = this.nextGameId();
+      this.playRound({ round: this.round, gameId });
+      return;
+    }
+
+    if (this.myScore >= 5 || this.oppScore >= 5 || this.round > TOTAL_ROUNDS) {
+      this.endVersus();
+      return;
+    }
+
+    const gameId = this.nextGameId();
+    this.transport.send({ type: "round:start", round: this.round, gameId });
+    this.playRound({ round: this.round, gameId });
+  }
+
+  playRound({ round, gameId }) {
+    audio.setTempo(Math.max(90, 220 - round * 8));
+    refs.gameArea.replaceChildren();
+    const instruction = document.createElement("div");
+    instruction.className = "instr";
+    instruction.textContent = this.games[gameId].prompt;
+    refs.gameArea.appendChild(instruction);
+    audio.round();
+    if (this.mode === "versus") {
+      refs.roundNumber.textContent = String(round);
+    }
+    if (this.currentScope) {
+      this.currentScope.dispose();
+      this.currentScope = null;
+    }
+    window.clearTimeout(this.gameTimer);
+    this.gameTimer = window.setTimeout(() => {
+      instruction.remove();
+      const scope = createRoundScope(refs.gameArea);
+      this.currentScope = scope;
+      const game = this.games[gameId];
+      const context = createGameContext(this, round, scope);
+      const startedAt = Date.now();
+      game.start(context).then((result) => {
+        const withTime = { ...result, time: (Date.now() - startedAt) / 1000 };
+        this.handleLocalResult(round, withTime);
+      });
+    }, 850);
+  }
+
+  handleLocalResult(round, result) {
+    if (this.ended) return;
+    if (this.mode === "solo") {
+      this.resolveSoloRound(result);
+      return;
+    }
+
+    this.pendingLocal.set(round, result);
+    this.transport.send({
+      type: "round:result",
+      round,
+      won: result.won,
+      time: result.time,
+    });
+    this.tryResolveVersusRound(round);
+  }
+
+  handleRemoteMessage(message) {
+    if (this.ended) return;
+    if (message.type === "round:start") {
+      this.round = message.round;
+      updateHud("versus", this.currentHudState());
+      this.playRound({ round: message.round, gameId: message.gameId });
+      return;
+    }
+
+    if (message.type === "round:result") {
+      this.pendingRemote.set(message.round, {
+        won: Boolean(message.won),
+        time: message.time || 0,
+      });
+      this.tryResolveVersusRound(message.round);
+      return;
+    }
+
+    if (message.type === "match:end") {
+      this.endVersus({
+        myScore: message.myScore,
+        oppScore: message.oppScore,
+        remoteTriggered: true,
+      });
+    }
+  }
+
+  tryResolveVersusRound(round) {
+    if (this.resolvedRounds.has(round)) return;
+    const local = this.pendingLocal.get(round);
+    const remote = this.pendingRemote.get(round);
+    if (!local || !remote) return;
+
+    this.resolvedRounds.add(round);
+    this.pendingLocal.delete(round);
+    this.pendingRemote.delete(round);
+
+    if (local.won) this.myScore += 1;
+    if (remote.won) this.oppScore += 1;
+
+    updateHud("versus", this.currentHudState());
+    this.showRoundVerdict(local.won ? "WIN!" : "LOSE", local.won);
+
+    window.setTimeout(() => {
+      if (this.ended) return;
+      if (this.role === "host") {
+        this.round += 1;
+        this.beginHostedRound();
+      }
+    }, 1200);
+  }
+
+  resolveSoloRound(result) {
+    if (result.won) {
+      this.myScore += 1;
+      this.times.push(result.time);
+      audio.win();
+      fx.spawn(fx.canvas.width / 2, fx.canvas.height / 2 + 50, true);
+    } else {
+      this.oppScore -= 1;
+      audio.lose();
+    }
+    updateHud("solo", this.currentHudState());
+    this.showRoundVerdict(result.won ? "WIN!" : "FAIL!", result.won);
+    window.setTimeout(() => {
+      if (this.oppScore <= 0) {
+        this.endSolo();
+        return;
+      }
+      this.round += 1;
+      this.beginHostedRound();
+    }, 1200);
+  }
+
+  showRoundVerdict(text, isWin) {
+    if (isWin) {
+      fx.spawn(fx.canvas.width / 2, fx.canvas.height / 2 + 50, true);
+      audio.win();
+    } else {
+      audio.lose();
+    }
+    const verdict = document.createElement("div");
+    verdict.className = "instr";
+    verdict.style.fontSize = "clamp(40px,18vw,100px)";
+    verdict.textContent = text;
+    refs.gameArea.appendChild(verdict);
+    window.setTimeout(() => verdict.remove(), 1100);
+  }
+
+  endSolo() {
+    this.ended = true;
+    const average = this.times.length
+      ? (this.times.reduce((sum, value) => sum + value, 0) / this.times.length).toFixed(2)
+      : "--";
+    refs.gameArea.innerHTML =
+      `<div class="instr" style="font-size:clamp(40px,16vw,90px)">GAME OVER<br>` +
+      `<span style="font-size:clamp(20px,8vw,40px)">WINS: ${this.myScore}<br>AVG TIME: ${average}s</span></div>`;
+  }
+
+  endVersus(payload = null) {
+    if (this.ended) return;
+    this.ended = true;
+    const finalMy = payload?.myScore ?? this.myScore;
+    const finalOpp = payload?.oppScore ?? this.oppScore;
+    if (!payload?.remoteTriggered) {
+      this.transport.send({
+        type: "match:end",
+        myScore: finalOpp,
+        oppScore: finalMy,
+      });
+    }
+    const victory = finalMy > finalOpp;
+    refs.gameArea.innerHTML =
+      `<div class="instr" style="font-size:clamp(40px,16vw,90px)">${victory ? "VICTORY" : "DEFEAT"}<br>` +
+      `<span style="font-size:clamp(30px,10vw,60px)">${finalMy}-${finalOpp}</span></div>`;
+    if (victory) {
+      const show = window.setInterval(() => {
+        fx.spawn(Math.random() * fx.canvas.width, Math.random() * fx.canvas.height * 0.6 + fx.canvas.height * 0.2, true);
+      }, 350);
+      window.setTimeout(() => clearInterval(show), 3500);
+    }
+  }
+}
+
+const signaling = new SignalingClient(appState.signalingBase);
+const transport = new PeerTransport();
+const games = createGames();
+const controller = new MatchController({ games, transport });
+
+transport.onopen = () => {
+  setStatus("Connected. Warring starts now.", "success");
+  controller.attachVersus(appState.pendingRole || "guest");
+};
+
+transport.onmessage = (message) => {
+  controller.handleRemoteMessage(message);
+};
+
+transport.onclose = () => {
+  if (!controller.ended && refs.game.classList.contains("active")) {
+    setStatus("Connection closed.", "error");
+  }
+};
+
+refs.soloBtn.onclick = () => {
+  setStatus("Solo mode loaded.", "success");
+  controller.enterSolo();
+};
+
+refs.hostBtn.onclick = () => {
+  setLobbyMode("host");
+  setStatus("Host mode ready. Create a room.", "warn");
+};
+
+refs.joinBtn.onclick = () => {
+  setLobbyMode("join");
+  setStatus("Join mode ready. Enter a room code.", "warn");
+  refs.roomCodeInput.focus();
+};
+
+refs.hostResetBtn.onclick = () => {
+  setLobbyMode(null);
+  setStatus("");
+};
+
+refs.joinResetBtn.onclick = () => {
+  setLobbyMode(null);
+  setStatus("");
+};
+
+refs.copyCodeBtn.onclick = () => copyText(appState.roomCode, "Room code copied.");
+refs.copyLinkBtn.onclick = () => copyText(appState.joinUrl, "Join link copied.");
+
+refs.createRoomBtn.onclick = async () => {
+  refs.createRoomBtn.disabled = true;
+  appState.pendingRole = "host";
+  try {
+    await transport.host({
+      signaling,
+      roomReady: ({ roomId, joinUrl }) => {
+        appState.roomCode = roomId;
+        appState.joinUrl = joinUrl;
+        refs.roomCodeDisplay.textContent = roomId;
+        refs.joinLinkDisplay.textContent = joinUrl;
+      },
+      status: (state) => {
+        const tone = state === "creating room" || state === "waiting for player" ? "warn" : "success";
+        setStatus(state, tone);
+      },
+    });
+  } catch (error) {
+    setStatus(
+      error.message === "room_full" ? "Room full." :
+      error.message === "room_expired" ? "Expired room." :
+      error.message === "room_not_found" ? "Invalid code." :
+      "Unable to create room.",
+      "error"
+    );
+  } finally {
+    refs.createRoomBtn.disabled = false;
+  }
+};
+
+refs.joinRoomBtn.onclick = async () => {
+  refs.joinRoomBtn.disabled = true;
+  appState.pendingRole = "guest";
+  const code = refs.roomCodeInput.value.trim().toUpperCase();
+  refs.roomCodeInput.value = code;
+  if (!code) {
+    setStatus("Enter a room code.", "warn");
+    refs.joinRoomBtn.disabled = false;
+    return;
+  }
+  try {
+    await transport.join({
+      signaling,
+      roomId: code,
+      status: (state) => setStatus(state, state === "joining" ? "warn" : "success"),
+    });
+  } catch (error) {
+    setStatus(
+      error.message === "room_not_found" ? "Invalid code." :
+      error.message === "room_expired" ? "Expired room." :
+      error.message === "room_full" ? "Room full." :
+      "Unable to join room.",
+      "error"
+    );
+  } finally {
+    refs.joinRoomBtn.disabled = false;
+  }
+};
+
+refs.roomCodeInput.addEventListener("input", () => {
+  refs.roomCodeInput.value = refs.roomCodeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+});
+
+document.querySelectorAll(".btn").forEach((button) => {
+  button.addEventListener("pointerdown", (event) => {
+    audio.click();
+    const rect = button.getBoundingClientRect();
+    fx.spawn(event.clientX - rect.left + button.offsetLeft, event.clientY - rect.top + button.offsetTop, false);
+  });
+});
+
+const deeplinkRoom = parseRoomFromUrl();
+if (deeplinkRoom) {
+  setLobbyMode("join");
+  refs.roomCodeInput.value = deeplinkRoom;
+  setStatus("Join link detected. Tap JOIN CODE.", "warn");
+}
