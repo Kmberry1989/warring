@@ -59,7 +59,7 @@
     }
 
     .logo {
-      margin: 22px auto 8px;
+      margin: 10vh auto 2vh; /* Lowered the title */
       text-align: center;
       filter: drop-shadow(0 6px 0 #000)
     }
@@ -101,22 +101,25 @@
       background: #fff;
       color: #000;
       margin: 10px 16px;
-      padding: 16px;
+      padding: 30px 16px;
       border: 4px solid #000;
       border-radius: 20px;
       box-shadow: 0 7px 0 #000;
       transition: transform 0.2s;
+      text-align: center; /* Center elements inside card */
     }
 
     .btn {
       width: 100%;
-      padding: 15px;
-      font-size: 21px;
+      max-width: 320px; /* Limit width */
+      display: block; /* Centering */
+      margin: 12px auto; /* Centering */
+      padding: 22px; /* Enlarged padding */
+      font-size: 26px; /* Enlarged font */
       font-weight: 900;
       border: 4px solid #000;
       border-radius: 14px;
-      margin: 7px 0;
-      box-shadow: 0 5px 0 #000;
+      box-shadow: 0 6px 0 #000;
       cursor: pointer;
       font-family: inherit;
       text-transform: uppercase;
@@ -124,8 +127,8 @@
     }
 
     .btn:active {
-      transform: translateY(2px);
-      box-shadow: 0 3px 0 #000;
+      transform: translateY(4px);
+      box-shadow: 0 2px 0 #000;
       filter: brightness(0.9);
     }
 
@@ -273,7 +276,7 @@
     <div id="lobby" class="screen active">
       <div class="logo"><span>WARRING</span><span>FOLKS!</span></div>
       <div class="card">
-        <button id="soloBtn" class="btn green">SOLO TEST</button>
+        <button id="soloBtn" class="btn green">SOLO MODE</button>
         <button id="hostBtn" class="btn blue">HOST GAME</button>
         <button id="joinBtn" class="btn yellow">JOIN GAME</button>
         <div id="hostP" style="display:none">
@@ -305,8 +308,76 @@
     const $ = s => document.querySelector(s); 
     let pc, dc, host = false, my = 0, opp = 0, rnd = 1, last = '', isSolo = false, times = []; 
     
-    const beep = (f, d) => { try { const a = new (window.AudioContext || webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = f; g.gain.value = .15; o.start(); o.stop(a.currentTime + d / 1000) } catch { } };
+    /* --- AUDIO SYSTEM & BGM --- */
+    let actx, bgmGain, sfxGain, bgmTempo = 220, bgmStep = 0, bgmTimer;
     
+    const initAudio = () => {
+      if (actx) return;
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      
+      bgmGain = actx.createGain();
+      bgmGain.gain.value = 0.04; // Quiet BGM
+      bgmGain.connect(actx.destination);
+      
+      sfxGain = actx.createGain();
+      sfxGain.gain.value = 0.15; // Louder SFX
+      sfxGain.connect(actx.destination);
+      
+      playBGM();
+    };
+    
+    // Start audio engine on first interaction
+    document.addEventListener('pointerdown', initAudio, { once: true });
+
+    const playBGM = () => {
+      if (!actx || !$('#lobby').classList.contains('active') && !$('#game').classList.contains('active')) return;
+      const notes = [220, 261.63, 329.63, 392.00, 440, 523.25]; // Retro arpeggio notes
+      
+      const playNote = () => {
+        if (actx.state === 'suspended') actx.resume();
+        const o = actx.createOscillator();
+        const g = actx.createGain();
+        o.type = 'triangle';
+        o.frequency.value = notes[bgmStep % notes.length];
+        // Occasional zany pitch shift
+        if (Math.random() > 0.9) o.frequency.value *= 1.5; 
+        
+        g.gain.setValueAtTime(1, actx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + 0.15);
+        
+        o.connect(g);
+        g.connect(bgmGain);
+        o.start();
+        o.stop(actx.currentTime + 0.15);
+        
+        bgmStep++;
+        bgmTimer = setTimeout(playNote, bgmTempo);
+      };
+      playNote();
+    };
+
+    const playSFX = (f, d, vol = 1, type = 'square') => { 
+      try { 
+        if (!actx) initAudio();
+        if (actx.state === 'suspended') actx.resume();
+        const o = actx.createOscillator(); 
+        const g = actx.createGain(); 
+        o.type = type;
+        o.frequency.value = f; 
+        g.gain.setValueAtTime(vol, actx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.01, actx.currentTime + (d/1000));
+        o.connect(g); 
+        g.connect(sfxGain); 
+        o.start(); 
+        o.stop(actx.currentTime + (d / 1000)); 
+      } catch (e) { } 
+    };
+
+    const sfxClick = () => playSFX(600, 50, 0.5, 'sine');
+    const sfxWin = () => { playSFX(800, 100, 0.8, 'square'); setTimeout(()=>playSFX(1200, 200, 0.8, 'square'), 100); };
+    const sfxLose = () => { playSFX(300, 200, 0.8, 'sawtooth'); setTimeout(()=>playSFX(250, 300, 0.8, 'sawtooth'), 150); };
+    const sfxStartRound = () => playSFX(800, 70, 0.5, 'sine');
+
     /* --- Fireworks / Confetti Particle Engine --- */
     const fxc = document.createElement('canvas');
     fxc.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:999;';
@@ -324,8 +395,8 @@
         pts.push({
           x: x || fxc.width/2, 
           y: y || fxc.height/2,
-          vx: (Math.random()-0.5)*(isWin ? 25 : 10), 
-          vy: (Math.random()-0.5)*(isWin ? 25 : 10) - (isWin ? 8 : 0),
+          vx: (Math.random()-0.5)*(isWin ? 25 : 15), 
+          vy: (Math.random()-0.5)*(isWin ? 25 : 15) - (isWin ? 8 : 2),
           c: colors[Math.floor(Math.random()*colors.length)],
           s: Math.random()*8+5, 
           life: 1, 
@@ -352,15 +423,31 @@
       requestAnimationFrame(loopFX);
     };
     loopFX();
-    /* ------------------------------------------ */
+
+    // Lobby Random Explosions
+    let lobbyFxTimer = setInterval(() => {
+        if ($('#lobby').classList.contains('active')) {
+            spawnFX(Math.random() * fxc.width, Math.random() * (fxc.height*0.7), Math.random() > 0.5);
+            if (actx && Math.random() > 0.4) playSFX(300 + Math.random()*600, 30, 0.1, 'square');
+        }
+    }, 1200);
+
+    /* --- Button SFX & FX Wrappers --- */
+    document.querySelectorAll('.btn').forEach(b => {
+      b.addEventListener('pointerdown', (e) => {
+        sfxClick();
+        const r = b.getBoundingClientRect();
+        spawnFX(e.clientX - r.left + b.offsetLeft, e.clientY - r.top + b.offsetTop, false);
+      });
+    });
 
     // Solo Mode logic
     $('#soloBtn').onclick = () => { 
       isSolo = true; 
       host = true; 
       dc = { send: () => {} }; 
-      opp = 3; // LIVES for solo mode
-      $('.hud').innerHTML = `<div>WINS <b id="ms">0</b></div><div style="font-size:16px;text-align:center;line-height:1.1;color:#aaa">SPD<br><b id="spd" style="color:#fff">--</b>s</div><div>LIVES <b id="os">3</b></div>`;
+      opp = 10; // LIVES for solo mode
+      $('.hud').innerHTML = `<div>WINS <b id="ms">0</b></div><div style="font-size:16px;text-align:center;line-height:1.1;color:#aaa">SPD<br><b id="spd" style="color:#fff">--</b>s</div><div>LIVES <b id="os">10</b></div>`;
       $('#lobby').classList.remove('active'); 
       $('#game').classList.add('active'); 
       setTimeout(next, 800); 
@@ -370,14 +457,31 @@
     $('#joinBtn').onclick = () => { $('#joinP').style.display = 'block'; $('#hostBtn').style.display = 'none'; $('#joinBtn').style.display = 'none'; $('#soloBtn').style.display = 'none'; };
     $('#makeBtn').onclick = async () => { const o = JSON.parse(atob($('#offIn').value.trim())); pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); pc.ondatachannel = e => { dc = e.channel; setup() }; await pc.setRemoteDescription(o); const a = await pc.createAnswer(); await pc.setLocalDescription(a); pc.onicecandidate = e => { if (!e.candidate) { $('#ansOut').style.display = 'block'; $('#copyAns').style.display = 'block'; $('#ansOut').value = btoa(JSON.stringify(pc.localDescription)) } }; $('#stat').textContent = 'Share answer back...' };
     $('#goBtn').onclick = async () => { await pc.setRemoteDescription(JSON.parse(atob($('#ansIn').value.trim()))) };
-    function setup() { dc.onopen = () => { $('#lobby').classList.remove('active'); $('#game').classList.add('active'); if (host) setTimeout(next, 800) }; dc.onmessage = e => { const m = JSON.parse(e.data); if (m.t === 'r') play(m); if (m.t === 's') end(m) } }
+    
+    function setup() { 
+      dc.onopen = () => { 
+        $('#lobby').classList.remove('active'); 
+        $('#game').classList.add('active'); 
+        if (host) setTimeout(next, 800) 
+      }; 
+      dc.onmessage = e => { 
+        const m = JSON.parse(e.data); 
+        if (m.t === 'r') play(m); 
+        if (m.t === 's') end(m) 
+      } 
+    }
     
     function next() { 
       if (isSolo) {
         if (opp <= 0) return end({ my, opp, isSolo: true });
+        rnd++; // Increment round visually for solo
       } else {
         if (my >= 5 || opp >= 5 || rnd > 9) { dc.send(JSON.stringify({ t: 's', my, opp })); return end({ my, opp }) } 
       }
+
+      // Speed up BGM as rounds increase!
+      bgmTempo = Math.max(90, 220 - (rnd * 8));
+
       const list = ['fly', 'dont', 'pop', 'catch', 'dodge', 'swipe', 'triple', 'hold', 'mash', 'trace', 'match', 'avoid', 'pump', 'whack', 'stop', 'drag', 'scratch', 'find', 'feed', 'order']; 
       let g; do { g = list[Math.floor(Math.random() * list.length)] } while (g === last); 
       last = g; 
@@ -394,7 +498,7 @@
       i.className = 'instr'; 
       i.textContent = games[d.g].i; 
       $('#gameArea').appendChild(i); 
-      beep(800, 70); 
+      sfxStartRound();
       
       setTimeout(() => { 
         i.remove(); 
@@ -415,10 +519,10 @@
           $('#spd').textContent = r.time.toFixed(2);
         }
         spawnFX(fxc.width/2, fxc.height/2 + 50, true); 
-        beep(1200, 100); 
+        sfxWin();
       } else { 
         if (isSolo) opp--; else opp++; 
-        beep(300, 150); 
+        sfxLose();
       } 
       
       $('#ms').textContent = my; 
@@ -436,6 +540,7 @@
     }
     
     function end(m) { 
+      bgmTempo = 300; // Slow sad/happy tempo for end
       if (m.isSolo) {
         const avg = times.length ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(2) : '--';
         $('#gameArea').innerHTML = `<div class="instr" style="font-size:clamp(40px, 16vw, 90px);">GAME OVER<br><span style="font-size:clamp(20px, 8vw, 40px)">WINS: ${m.my} <br> AVG TIME: ${avg}s</span></div>`;
@@ -449,260 +554,28 @@
       }
     }
     
+    /* --- THE MINIGAMES --- */
     const games = {
-      fly: { i: 'TAP!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const f = document.createElement('div'); f.className = 'fly'; f.textContent = '🪰'; a.appendChild(f); const mv = () => { f.style.left = Math.random() * 80 + '%'; f.style.top = Math.random() * 70 + '%' }; mv(); const iv = setInterval(mv, 400); const t = setTimeout(() => { clearInterval(iv); res({ w: 0 }) }, 3500); f.onclick = () => { clearInterval(iv); clearTimeout(t); beep(1200, 60); res({ w: 1 }) } }) },
+      fly: { i: 'TAP!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const f = document.createElement('div'); f.className = 'fly'; f.textContent = '🪰'; a.appendChild(f); const mv = () => { f.style.left = Math.random() * 80 + '%'; f.style.top = Math.random() * 70 + '%' }; mv(); const iv = setInterval(mv, 400); const t = setTimeout(() => { clearInterval(iv); res({ w: 0 }) }, 3500); f.onclick = () => { clearInterval(iv); clearTimeout(t); sfxClick(); res({ w: 1 }) } }) },
       dont: { i: "DON'T!", f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn">DON\'T</div>'; let ok = true; a.onpointerdown = () => ok = false; setTimeout(() => res({ w: ok ? 1 : 0 }), 3000) }) },
-      pop: { i: 'POP!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; let c = 0; for (let i = 0; i < 7; i++) { const b = document.createElement('div'); b.className = 'balloon'; b.textContent = '🎈'; b.style.left = 5 + i * 13 + '%'; b.style.bottom = '-20%'; b.style.animationDelay = i * .2 + 's'; b.onclick = () => { b.style.transform = 'scale(0)'; setTimeout(()=>b.remove(), 100); c++; if (c >= 7) res({ w: 1 }) }; a.appendChild(b) } setTimeout(() => res({ w: c >= 7 ? 1 : 0 }), 3800) }) },
-      catch: { i: 'CATCH!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const p = document.createElement('div'); p.className = 'basket'; p.textContent = '🧺'; p.style.left = '50%'; a.appendChild(p); let x = 50; const mv = e => { const r = a.getBoundingClientRect(); x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100; p.style.left = x + '%' }; a.onpointermove = mv; a.ontouchmove = mv; let c = 0; const drop = () => { const t = document.createElement('div'); t.className = 'toast'; t.textContent = '🍞'; t.style.left = Math.random() * 70 + 15 + '%'; t.style.top = '0%'; a.appendChild(t); let y = 0; const iv = setInterval(() => { y += 2.5; t.style.top = y + '%'; if (y > 75 && Math.abs(parseFloat(t.style.left) - x) < 15) { clearInterval(iv); t.remove(); c++; if (c >= 3) { clearInterval(sp); res({ w: 1 }) } } if (y > 95) { clearInterval(iv); t.remove() } }, 30) }; const sp = setInterval(drop, 700); drop(); setTimeout(() => { clearInterval(sp); res({ w: c >= 3 ? 1 : 0 }) }, 4000) }) },
+      pop: { i: 'POP!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; let c = 0; for (let i = 0; i < 7; i++) { const b = document.createElement('div'); b.className = 'balloon'; b.textContent = '🎈'; b.style.left = 5 + i * 13 + '%'; b.style.bottom = '-20%'; b.style.animationDelay = i * .2 + 's'; b.onclick = () => { sfxClick(); b.style.transform = 'scale(0)'; setTimeout(()=>b.remove(), 100); c++; if (c >= 7) res({ w: 1 }) }; a.appendChild(b) } setTimeout(() => res({ w: c >= 7 ? 1 : 0 }), 3800) }) },
+      catch: { i: 'CATCH!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const p = document.createElement('div'); p.className = 'basket'; p.textContent = '🧺'; p.style.left = '50%'; a.appendChild(p); let x = 50; const mv = e => { const r = a.getBoundingClientRect(); x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100; p.style.left = x + '%' }; a.onpointermove = mv; a.ontouchmove = mv; let c = 0; const drop = () => { const t = document.createElement('div'); t.className = 'toast'; t.textContent = '🍞'; t.style.left = Math.random() * 70 + 15 + '%'; t.style.top = '0%'; a.appendChild(t); let y = 0; const iv = setInterval(() => { y += 2.5; t.style.top = y + '%'; if (y > 75 && Math.abs(parseFloat(t.style.left) - x) < 15) { clearInterval(iv); t.remove(); sfxClick(); c++; if (c >= 3) { clearInterval(sp); res({ w: 1 }) } } if (y > 95) { clearInterval(iv); t.remove() } }, 30) }; const sp = setInterval(drop, 700); drop(); setTimeout(() => { clearInterval(sp); res({ w: c >= 3 ? 1 : 0 }) }, 4000) }) },
       dodge: { i: 'DODGE!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const p = document.createElement('div'); p.className = 'player'; p.textContent = '🏃'; p.style.left = '50%'; a.appendChild(p); let x = 50; const mv = e => { const r = a.getBoundingClientRect(); x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100; p.style.left = x + '%' }; a.onpointermove = mv; a.ontouchmove = mv; let hit = false; const drop = () => { const b = document.createElement('div'); b.className = 'banana'; b.textContent = '🍌'; b.style.left = Math.random() * 80 + 10 + '%'; b.style.top = '0%'; a.appendChild(b); let y = 0; const iv = setInterval(() => { y += 3; b.style.top = y + '%'; if (y > 70 && Math.abs(parseFloat(b.style.left) - x) < 12) hit = true; if (y > 100) { clearInterval(iv); b.remove() } }, 30) }; const sp = setInterval(drop, 500); setTimeout(() => { clearInterval(sp); res({ w: hit ? 0 : 1 }) }, 3500) }) },
       swipe: { i: 'SWIPE!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const dirs = [['→', 'right'], ['←', 'left'], ['↑', 'up'], ['↓', 'down']]; const d = dirs[Math.floor(Math.random() * 4)]; a.innerHTML = `<div class="instr" style="font-size:clamp(60px, 30vw, 150px)">${d[0]}</div>`; let sx = 0, sy = 0; const ds = e => { const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY }; const us = e => { const p = e.changedTouches ? e.changedTouches[0] : e; const dx = p.clientX - sx, dy = p.clientY - sy; let dir = ''; if (Math.abs(dx) > Math.abs(dy)) dir = dx > 30 ? 'right' : 'left'; else dir = dy > 30 ? 'down' : 'up'; res({ w: dir === d[1] ? 1 : 0 }) }; a.onpointerdown = ds; a.onpointerup = us; a.ontouchstart = ds; a.ontouchend = us; setTimeout(() => res({ w: 0 }), 2200) }) },
-      triple: { i: 'x3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" id="t" style="transition: transform 0.05s">0</div>'; let c = 0; $('#t').onclick = () => { c++; $('#t').textContent = c; $('#t').style.transform = `translate(-50%, -50%) scale(${1 - c*0.05})`; if (c === 3) { beep(1100, 40); r({ w: 1 }) } }; setTimeout(() => r({ w: c === 3 ? 1 : 0 }), 2000) }) },
-      hold: { i: 'HOLD!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" style="background:#0a0">HOLD</div>'; const b = a.firstChild; let s; const d = () => s = Date.now(); const u = () => r({ w: Date.now() - s > 1800 ? 1 : 0 }); b.onpointerdown = d; b.onpointerup = u; b.ontouchstart = d; b.ontouchend = u; setTimeout(() => r({ w: 0 }), 3200) }) },
-      mash: { i: 'MASH!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" id="mbtn" style="background:var(--p); transition: transform 0.05s ease-out">0</div>'; let c = 0; $('#mbtn').onclick = () => { c++; $('#mbtn').textContent = c; $('#mbtn').style.transform = `translate(-50%, -50%) scale(${1 + c*0.04})`; if (c >= 12) { beep(1200, 50); r({ w: 1 }) } }; setTimeout(() => r({ w: c >= 12 ? 1 : 0 }), 3200) }) },
-      trace: { i: 'CIRCLE!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<canvas id="cv" width="300" height="300" style="touch-action:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vw"></canvas>'; const c = $('#cv'), x = c.getContext('2d'), s = 150; let d = false, p = 0; x.lineWidth = 12; x.strokeStyle = '#fff'; x.beginPath(); x.arc(s, s, 100, 0, Math.PI * 2); x.stroke(); x.globalCompositeOperation = 'destination-out'; const m = e => { if (!d) return; const r = c.getBoundingClientRect(); const scaleX = c.width / r.width; const scaleY = c.height / r.height; const X = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) * scaleX; const Y = ((e.touches ? e.touches[0].clientY : e.clientY) - r.top) * scaleY; x.beginPath(); x.arc(X, Y, 20, 0, 7); x.fill(); p++ }; c.onpointerdown = () => d = true; c.onpointerup = () => d = false; c.onpointermove = m; c.ontouchstart = () => d = true; c.ontouchend = () => d = false; c.ontouchmove = m; setTimeout(() => r({ w: p > 60 ? 1 : 0 }), 3000) }) },
-      match: { i: 'PAIR!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; const e = ['🍎', '🍎', '🍌', '🍌', '🍇', '🍇'].sort(() => Math.random() - .5); let o = null, found = 0; e.forEach((v, i) => { const d = document.createElement('div'); d.className = 'find-item'; d.textContent = '❓'; d.style.cssText += `left:${15 + (i % 3) * 28}%; top:${20 + Math.floor(i / 3) * 35}%;`; d.onclick = () => { d.textContent = v; d.style.transform = 'scale(1.2) rotate(10deg)'; if (!o) { o = d } else { if (o.textContent === v && o !== d) { found++; o = null; if (found === 3) r({ w: 1 }) } else { setTimeout(() => { o.textContent = '❓'; d.textContent = '❓'; o.style.transform = 'scale(1)'; d.style.transform = 'scale(1)'; o = null }, 400) } } }; a.appendChild(d) }); setTimeout(() => r({ w: found === 3 ? 1 : 0 }), 4000) }) },
-      avoid: { i: 'GREEN!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let ok = true; for (let i = 0; i < 12; i++) { const d = document.createElement('div'); const green = Math.random() > .7; d.className = 'find-item'; d.textContent = green ? '🟢' : '🔴'; d.style.cssText += `left:${Math.random() * 75 + 5}%; top:${Math.random() * 65 + 10}%;`; d.onclick = () => { if (!green) { ok = false; d.style.transform = 'scale(2)'; } else { d.style.transform = 'scale(0)'; setTimeout(()=>d.remove(), 200) } }; a.appendChild(d) } setTimeout(() => r({ w: ok ? 1 : 0 }), 3000) }) },
-      pump: { i: 'PUMP!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="bal" style="font-size:clamp(60px, 20vw, 150px);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.6);transition:transform 0.1s">🎈</div>'; let s = .6; const b = $('#bal'); const p = () => { s += .12; b.style.transform = `translate(-50%,-50%) scale(${s})`; if (s > 1.8) r({ w: 1 }) }; a.onclick = p; a.ontouchstart = p; setTimeout(() => r({ w: s > 1.8 ? 1 : 0 }), 3000) }) },
-      whack: { i: 'WHACK!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let h = 0; for (let i = 0; i < 9; i++) { const d = document.createElement('div'); d.style.cssText = `position:absolute;width:24%;height:22%;left:${8 + (i % 3) * 30}%;top:${10 + Math.floor(i / 3) * 28}%;background:#630;border:3px solid #000;border-radius:50%;overflow:hidden;`; a.appendChild(d) } const spawn = () => { const ps = [...a.children]; const p = ps[Math.floor(Math.random() * 9)]; p.innerHTML = '<div style="font-size:clamp(30px, 14vw, 80px);cursor:pointer;text-align:center;margin-top:10%;animation:popIn 0.1s forwards;">🐹</div>'; p.firstChild.onclick = () => { h++; p.innerHTML = ''; if (h >= 3) r({ w: 1 }) }; setTimeout(() => p.innerHTML = '', 800) }; const iv = setInterval(spawn, 600); setTimeout(() => { clearInterval(iv); r({ w: h >= 3 ? 1 : 0 }) }, 3500) }) },
+      triple: { i: 'x3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" id="t" style="transition: transform 0.05s">0</div>'; let c = 0; $('#t').onclick = () => { c++; sfxClick(); $('#t').textContent = c; $('#t').style.transform = `translate(-50%, -50%) scale(${1 - c*0.05})`; if (c === 3) { r({ w: 1 }) } }; setTimeout(() => r({ w: c === 3 ? 1 : 0 }), 2000) }) },
+      hold: { i: 'HOLD!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" style="background:#0a0">HOLD</div>'; const b = a.firstChild; let s; const d = () => { s = Date.now(); sfxClick(); }; const u = () => r({ w: Date.now() - s > 1800 ? 1 : 0 }); b.onpointerdown = d; b.onpointerup = u; b.ontouchstart = d; b.ontouchend = u; setTimeout(() => r({ w: 0 }), 3200) }) },
+      mash: { i: 'MASH!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" id="mbtn" style="background:var(--p); transition: transform 0.05s ease-out">0</div>'; let c = 0; $('#mbtn').onclick = () => { c++; sfxClick(); $('#mbtn').textContent = c; $('#mbtn').style.transform = `translate(-50%, -50%) scale(${1 + c*0.04})`; if (c >= 12) { r({ w: 1 }) } }; setTimeout(() => r({ w: c >= 12 ? 1 : 0 }), 3200) }) },
+      trace: { i: 'CIRCLE!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<canvas id="cv" width="300" height="300" style="touch-action:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vw"></canvas>'; const c = $('#cv'), x = c.getContext('2d'), s = 150; let d = false, p = 0; x.lineWidth = 12; x.strokeStyle = '#fff'; x.beginPath(); x.arc(s, s, 100, 0, Math.PI * 2); x.stroke(); x.globalCompositeOperation = 'destination-out'; const m = e => { if (!d) return; const r = c.getBoundingClientRect(); const scaleX = c.width / r.width; const scaleY = c.height / r.height; const X = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) * scaleX; const Y = ((e.touches ? e.touches[0].clientY : e.clientY) - r.top) * scaleY; x.beginPath(); x.arc(X, Y, 20, 0, 7); x.fill(); p++; if(p%5===0) sfxClick(); }; c.onpointerdown = () => d = true; c.onpointerup = () => d = false; c.onpointermove = m; c.ontouchstart = () => d = true; c.ontouchend = () => d = false; c.ontouchmove = m; setTimeout(() => r({ w: p > 60 ? 1 : 0 }), 3000) }) },
+      match: { i: 'PAIR!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; const e = ['🍎', '🍎', '🍌', '🍌', '🍇', '🍇'].sort(() => Math.random() - .5); let o = null, found = 0; e.forEach((v, i) => { const d = document.createElement('div'); d.className = 'find-item'; d.textContent = '❓'; d.style.cssText += `left:${15 + (i % 3) * 28}%; top:${20 + Math.floor(i / 3) * 35}%;`; d.onclick = () => { sfxClick(); d.textContent = v; d.style.transform = 'scale(1.2) rotate(10deg)'; if (!o) { o = d } else { if (o.textContent === v && o !== d) { found++; o = null; if (found === 3) r({ w: 1 }) } else { setTimeout(() => { o.textContent = '❓'; d.textContent = '❓'; o.style.transform = 'scale(1)'; d.style.transform = 'scale(1)'; o = null }, 400) } } }; a.appendChild(d) }); setTimeout(() => r({ w: found === 3 ? 1 : 0 }), 4000) }) },
+      avoid: { i: 'GREEN!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let ok = true; for (let i = 0; i < 12; i++) { const d = document.createElement('div'); const green = Math.random() > .7; d.className = 'find-item'; d.textContent = green ? '🟢' : '🔴'; d.style.cssText += `left:${Math.random() * 75 + 5}%; top:${Math.random() * 65 + 10}%;`; d.onclick = () => { sfxClick(); if (!green) { ok = false; d.style.transform = 'scale(2)'; } else { d.style.transform = 'scale(0)'; setTimeout(()=>d.remove(), 200) } }; a.appendChild(d) } setTimeout(() => r({ w: ok ? 1 : 0 }), 3000) }) },
+      pump: { i: 'PUMP!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="bal" style="font-size:clamp(60px, 20vw, 150px);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.6);transition:transform 0.1s">🎈</div>'; let s = .6; const b = $('#bal'); const p = () => { sfxClick(); s += .12; b.style.transform = `translate(-50%,-50%) scale(${s})`; if (s > 1.8) r({ w: 1 }) }; a.onclick = p; a.ontouchstart = p; setTimeout(() => r({ w: s > 1.8 ? 1 : 0 }), 3000) }) },
+      whack: { i: 'WHACK!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let h = 0; for (let i = 0; i < 9; i++) { const d = document.createElement('div'); d.style.cssText = `position:absolute;width:24%;height:22%;left:${8 + (i % 3) * 30}%;top:${10 + Math.floor(i / 3) * 28}%;background:#630;border:3px solid #000;border-radius:50%;overflow:hidden;`; a.appendChild(d) } const spawn = () => { const ps = [...a.children]; const p = ps[Math.floor(Math.random() * 9)]; p.innerHTML = '<div style="font-size:clamp(30px, 14vw, 80px);cursor:pointer;text-align:center;margin-top:10%;animation:popIn 0.1s forwards;">🐹</div>'; p.firstChild.onclick = () => { sfxClick(); h++; p.innerHTML = ''; if (h >= 3) r({ w: 1 }) }; setTimeout(() => p.innerHTML = '', 800) }; const iv = setInterval(spawn, 600); setTimeout(() => { clearInterval(iv); r({ w: h >= 3 ? 1 : 0 }) }, 3500) }) },
       stop: { i: 'STOP!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="bar" style="position:absolute;left:10%;top:45%;width:80%;height:30px;background:#444;border:3px solid #000"><div id="mk" style="position:absolute;left:40%;width:20%;height:100%;background:#0f0"></div><div id="pt" style="position:absolute;left:0%;width:10px;height:40px;background:#fff;top:-5px;transition:left.02s linear"></div></div>'; let x = 0, d = 1; const pt = $('#pt'); const iv = setInterval(() => { x += d * 2; if (x > 100 || x < 0) d *= -1; pt.style.left = x + '%'; }, 20); a.onclick = () => { clearInterval(iv); const ok = x > 38 && x < 62; pt.style.background = ok ? '#0f0' : '#f00'; r({ w: ok ? 1 : 0 }) }; setTimeout(() => { clearInterval(iv); r({ w: 0 }) }, 3000) }) },
       drag: { i: 'DRAG!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="tg" style="position:absolute;left:70%;top:30%;font-size:clamp(40px,16vw,90px)">🎯</div><div id="st" style="position:absolute;left:20%;top:60%;font-size:clamp(36px,14vw,80px);touch-action:none;z-index:2;cursor:pointer;transition:transform 0.1s">⭐</div>'; const s = $('#st'), tg = $('#tg'); let drag = false; const mv = e => { if (!drag) return; const rc = a.getBoundingClientRect(); const x = (e.touches ? e.touches[0].clientX : e.clientX) - rc.left; const y = (e.touches ? e.touches[0].clientY : e.clientY) - rc.top; s.style.left = x - 20 + 'px'; s.style.top = y - 20 + 'px'; const tr = tg.getBoundingClientRect(); if (Math.abs(x - tr.left + rc.left - tr.width/2) < 45 && Math.abs(y - tr.top + rc.top - tr.height/2) < 45) { s.style.transform = 'scale(1.5)'; drag=false; r({ w: 1 }) } }; s.onpointerdown = () => { drag = true; s.style.transform = 'scale(1.2)'; }; document.onpointerup = () => { drag = false; s.style.transform = 'scale(1)'; }; document.onpointermove = mv; s.ontouchstart = () => { drag = true; s.style.transform = 'scale(1.2)'; }; document.ontouchend = () => { drag = false; s.style.transform = 'scale(1)'; }; document.ontouchmove = mv; setTimeout(() => r({ w: 0 }), 3500) }) },
-      scratch: { i: 'SCRATCH!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div style="position:absolute;inset:20%;background:#fff;color:#000;display:flex;align-items:center;justify-content:center;font-size:clamp(40px,12vw,80px);border:4px solid #000">💎</div><canvas id="sc" width="300" height="300" style="position:absolute;inset:20%;width:60%;height:60%;touch-action:none;"></canvas>'; const c = $('#sc'), x = c.getContext('2d'); x.fillStyle = '#999'; x.fillRect(0, 0, 300, 300); let p = 0; x.globalCompositeOperation = 'destination-out'; const m = e => { const r = c.getBoundingClientRect(); const X = (e.touches ? e.touches[0].clientX : e.clientX) - r.left; const Y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top; x.beginPath(); x.arc(X * 300 / r.width, Y * 300 / r.height, 22, 0, 7); x.fill(); p++ }; c.onpointerdown = () => { c.onpointermove = m; }; document.onpointerup = () => { c.onpointermove = null; }; c.ontouchmove = m; setTimeout(() => r({ w: p > 60 ? 1 : 0 }), 3500) }) },
-      find: { i: 'FIND!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; const emojis = ['😀','😃','😄','😁','😆','😅','😂','🤣']; const base = emojis[Math.floor(Math.random()*emojis.length)]; let odd; do { odd = emojis[Math.floor(Math.random()*emojis.length)]; } while(odd === base); const total = 12; const oddIndex = Math.floor(Math.random() * total); for(let i=0; i<total; i++) { const d = document.createElement('div'); d.className = 'find-item'; d.textContent = i === oddIndex ? odd : base; d.style.cssText += `left:${10 + (i%4)*22}%; top:${20 + Math.floor(i/4)*22}%;`; d.onclick = () => { if(i === oddIndex) { d.style.transform = 'scale(1.8) rotate(15deg)'; r({w:1}); } else { d.style.transform = 'scale(0.5)'; r({w:0}); } }; a.appendChild(d); } setTimeout(() => r({w:0}), 4000); }) },
+      scratch: { i: 'SCRATCH!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div style="position:absolute;inset:20%;background:#fff;color:#000;display:flex;align-items:center;justify-content:center;font-size:clamp(40px,12vw,80px);border:4px solid #000">💎</div><canvas id="sc" width="300" height="300" style="position:absolute;inset:20%;width:60%;height:60%;touch-action:none;"></canvas>'; const c = $('#sc'), x = c.getContext('2d'); x.fillStyle = '#999'; x.fillRect(0, 0, 300, 300); let p = 0; x.globalCompositeOperation = 'destination-out'; const m = e => { const r = c.getBoundingClientRect(); const X = (e.touches ? e.touches[0].clientX : e.clientX) - r.left; const Y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top; x.beginPath(); x.arc(X * 300 / r.width, Y * 300 / r.height, 22, 0, 7); x.fill(); p++; if(p%5===0) sfxClick(); }; c.onpointerdown = () => { c.onpointermove = m; }; document.onpointerup = () => { c.onpointermove = null; }; c.ontouchmove = m; setTimeout(() => r({ w: p > 60 ? 1 : 0 }), 3500) }) },
+      find: { i: 'FIND!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; const emojis = ['😀','😃','😄','😁','😆','😅','😂','🤣']; const base = emojis[Math.floor(Math.random()*emojis.length)]; let odd; do { odd = emojis[Math.floor(Math.random()*emojis.length)]; } while(odd === base); const total = 12; const oddIndex = Math.floor(Math.random() * total); for(let i=0; i<total; i++) { const d = document.createElement('div'); d.className = 'find-item'; d.textContent = i === oddIndex ? odd : base; d.style.cssText += `left:${10 + (i%4)*22}%; top:${20 + Math.floor(i/4)*22}%;`; d.onclick = () => { sfxClick(); if(i === oddIndex) { d.style.transform = 'scale(1.8) rotate(15deg)'; r({w:1}); } else { d.style.transform = 'scale(0.5)'; r({w:0}); } }; a.appendChild(d); } setTimeout(() => r({w:0}), 4000); }) },
       feed: { i: 'FEED!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="m" style="position:absolute;right:10%;top:40%;font-size:clamp(50px,16vw,100px);transition:transform 0.1s">😮</div><div id="f" style="position:absolute;left:10%;top:40%;font-size:clamp(40px,12vw,80px);touch-action:none;z-index:2;cursor:pointer;transition:transform 0.1s">🍔</div>'; const f = $('#f'), m = $('#m'); let drag = false; const mv = e => { if(!drag) return; const rc = a.getBoundingClientRect(); const x = (e.touches ? e.touches[0].clientX : e.clientX) - rc.left; const y = (e.touches ? e.touches[0].clientY : e.clientY) - rc.top; f.style.left = x - 25 + 'px'; f.style.top = y - 25 + 'px'; const mRect = m.getBoundingClientRect(); const mX = mRect.left - rc.left + mRect.width / 2; const mY = mRect.top - rc.top + mRect.height / 2; if (Math.hypot(x - mX, y - mY) < 60) { m.textContent = '😋'; m.style.transform = 'scale(1.4)'; f.style.display = 'none'; drag = false; r({ w: 1 }); } }; f.onpointerdown = () => { drag = true; f.style.transform = 'scale(1.2)'; }; document.onpointerup = () => { drag = false; f.style.transform = 'scale(1)'; }; document.onpointermove = mv; f.ontouchstart = () => { drag = true; f.style.transform = 'scale(1.2)'; }; document.ontouchend = () => { drag = false; f.style.transform = 'scale(1)'; }; document.ontouchmove = mv; setTimeout(() => r({w:0}), 3500); }) },
-      order: { i: '1-2-3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let current = 1; const zones = [{x:15,y:20}, {x:65,y:45}, {x:25,y:70}].sort(() => Math.random() - 0.5); for(let i=1; i<=3; i++) { const d = document.createElement('div'); d.style.cssText = `position:absolute;left:${zones[i-1].x}%;top:${zones[i-1].y}%;width:clamp(60px,22vw,120px);height:clamp(60px,22vw,120px);background:var(--y);color:#000;border:4px solid #000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:clamp(24px,10vw,60px);font-weight:900;box-shadow:0 5px 0 #000;cursor:pointer;transition:transform 0.1s, background 0.1s`; d.textContent = i; d.onclick = () => { if(i === current) { d.style.background = '#00E676'; d.style.transform = 'scale(1.1)'; current++; if(current > 3) r({w:1}); } else { d.style.background = '#FF1744'; d.style.transform = 'scale(0.9)'; setTimeout(() => r({w:0}), 200); } }; a.appendChild(d); } setTimeout(() => r({w:0}), 3500); }) }
-    };
-  </script>
-</body>
-
-</html>      line-height: .78;
-      padding: 6px 16px;
-      border: 5px solid #000;
-      font-weight: 900;
-      letter-spacing: 1px
-    }
-
-    .logo span:first-child {
-      background: #fff;
-      color: var(--p);
-      transform: rotate(2deg) translateY(3px)
-    }
-
-    .logo span:last-child {
-      background: var(--r);
-      color: #fff;
-      transform: rotate(-2deg) translateY(-3px);
-      margin-top: -5px
-    }
-
-    .card {
-      background: #fff;
-      color: #000;
-      margin: 10px 16px;
-      padding: 16px;
-      border: 4px solid #000;
-      border-radius: 20px;
-      box-shadow: 0 7px 0 #000
-    }
-
-    .btn {
-      width: 100%;
-      padding: 15px;
-      font-size: 21px;
-      font-weight: 900;
-      border: 4px solid #000;
-      border-radius: 14px;
-      margin: 7px 0;
-      box-shadow: 0 5px 0 #000;
-      cursor: pointer;
-      font-family: inherit;
-      text-transform: uppercase
-    }
-
-    .btn:active {
-      transform: translateY(2px);
-      box-shadow: 0 3px 0 #000
-    }
-
-    .blue {
-      background: var(--b);
-      color: #fff
-    }
-
-    .yellow {
-      background: var(--y);
-      color: #000
-    }
-
-    textarea {
-      width: 100%;
-      font-family: ui-monospace, monospace;
-      font-size: 12px;
-      padding: 8px;
-      border: 3px solid #000;
-      border-radius: 10px;
-      background: #fffbe5;
-      margin: 6px 0
-    }
-
-    .hud {
-      height: 54px;
-      background: #000;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0 14px;
-      font-size: 19px;
-      border-bottom: 4px solid #fff;
-      letter-spacing: .5px
-    }
-
-    #gameArea {
-      flex: 1;
-      position: relative;
-      overflow: hidden;
-      background: #111
-    }
-
-    .instr {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24vw;
-      font-weight: 900;
-      color: #fff;
-      -webkit-text-stroke: 7px #000;
-      text-shadow: 0 8px 0 #000;
-      pointer-events: none
-    }
-
-    .fly {
-      position: absolute;
-      font-size: 18vw;
-      transition: .25s;
-      filter: drop-shadow(0 5px 0 #000)
-    }
-
-    .balloon {
-      position: absolute;
-      font-size: 16vw;
-      animation: up 2.8s linear forwards
-    }
-
-    @keyframes up {
-      to {
-        transform: translateY(-120vh)
-      }
-    }
-
-    .basket {
-      position: absolute;
-      bottom: 20px;
-      font-size: 15vw;
-      transform: translateX(-50%);
-      filter: drop-shadow(0 4px 0 #000)
-    }
-
-    .toast {
-      position: absolute;
-      font-size: 12vw
-    }
-
-    .player {
-      position: absolute;
-      bottom: 24px;
-      font-size: 14vw;
-      transform: translateX(-50%)
-    }
-
-    .banana {
-      position: absolute;
-      font-size: 11vw
-    }
-
-    .dontbtn {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      width: 44vw;
-      height: 44vw;
-      background: var(--r);
-      border: 6px solid #000;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 8vw;
-      color: #fff;
-      box-shadow: 0 8px 0 #000
-    }
-  </style>
-</head>
-
-<body>
-  <div id="app">
-    <div id="lobby" class="screen active">
-      <div class="logo"><span>WARRING</span><span>FOLKS!</span></div>
-      <div class="card">
-        <button id="hostBtn" class="btn blue">HOST GAME</button>
-        <button id="joinBtn" class="btn yellow">JOIN GAME</button>
-        <div id="hostP" style="display:none">
-          <p><b>1. Send this CODE to your worst friend/best enemy:</b></p><textarea id="offOut" rows="3" readonly></textarea><button class="btn yellow"
-            onclick="navigator.clipboard.writeText(offOut.value)">COPY</button>
-          <p><b>2. Paste their RESPONSE:</b></p><textarea id="ansIn" rows="3"></textarea><button id="goBtn"
-            class="btn blue">CONNECT</button>
-        </div>
-        <div id="joinP" style="display:none">
-          <p>Paste CODE:</p><textarea id="offIn" rows="3"></textarea><button id="makeBtn" class="btn blue">MAKE
-            WARRING</button>
-          <textarea id="ansOut" rows="3" readonly style="display:none"></textarea><button id="copyAns"
-            class="btn yellow" style="display:none" onclick="navigator.clipboard.writeText(ansOut.value)">COPY
-        </button>
-        </div>
-        <p id="stat" style="text-align:center;font-family:system-ui;font-size:13px"></p>
-      </div>
-    </div>
-    <div id="game" class="screen">
-      <div class="hud">
-        <div>YOU <b id="ms">0</b></div>
-        <div>R<b id="rn">1</b>/9</div>
-        <div>OPP <b id="os">0</b></div>
-      </div>
-      <div id="gameArea"></div>
-    </div>
-  </div>
-  <script>
-    const $ = s => document.querySelector(s); let pc, dc, host = false, my = 0, opp = 0, rnd = 1, last = ''; const beep = (f, d) => { try { const a = new (window.AudioContext || webkitAudioContext)(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = f; g.gain.value = .15; o.start(); o.stop(a.currentTime + d / 1000) } catch { } };
-    $('#hostBtn').onclick = async () => { host = true; $('#hostP').style.display = 'block'; $('#hostBtn').style.display = 'none'; $('#joinBtn').style.display = 'none'; pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); dc = pc.createDataChannel('d'); setup(); const o = await pc.createOffer(); await pc.setLocalDescription(o); pc.onicecandidate = e => { if (!e.candidate) $('#offOut').value = btoa(JSON.stringify(pc.localDescription)) }; $('#stat').textContent = 'Share offer...' };
-    $('#joinBtn').onclick = () => { $('#joinP').style.display = 'block'; $('#hostBtn').style.display = 'none'; $('#joinBtn').style.display = 'none'; };
-    $('#makeBtn').onclick = async () => { const o = JSON.parse(atob($('#offIn').value.trim())); pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); pc.ondatachannel = e => { dc = e.channel; setup() }; await pc.setRemoteDescription(o); const a = await pc.createAnswer(); await pc.setLocalDescription(a); pc.onicecandidate = e => { if (!e.candidate) { $('#ansOut').style.display = 'block'; $('#copyAns').style.display = 'block'; $('#ansOut').value = btoa(JSON.stringify(pc.localDescription)) } }; $('#stat').textContent = 'Share answer back...' };
-    $('#goBtn').onclick = async () => { await pc.setRemoteDescription(JSON.parse(atob($('#ansIn').value.trim()))) };
-    function setup() { dc.onopen = () => { $('#lobby').classList.remove('active'); $('#game').classList.add('active'); if (host) setTimeout(next, 800) }; dc.onmessage = e => { const m = JSON.parse(e.data); if (m.t === 'r') play(m); if (m.t === 's') end(m) } }
-    function next() { if (my >= 5 || opp >= 5 || rnd > 9) { dc.send(JSON.stringify({ t: 's', my, opp })); return end({ my, opp }) } const list = ['fly', 'dont', 'pop', 'catch', 'dodge', 'swipe', 'triple', 'hold', 'shake', 'trace', 'match', 'avoid', 'pump', 'whack', 'stop', 'drag', 'scratch', 'tilt']; let g; do { g = list[Math.floor(Math.random() * list.length)] } while (g === last); last = g; const d = { t: 'r', g, rnd, at: Date.now() + 900 }; dc.send(JSON.stringify(d)); play(d) }
-    function play(d) { rnd = d.rnd; $('#rn').textContent = rnd; $('#gameArea').innerHTML = ''; const i = document.createElement('div'); i.className = 'instr'; i.textContent = games[d.g].i; $('#gameArea').appendChild(i); beep(800, 70); setTimeout(() => { i.remove(); games[d.g].f().then(r => { dc.send(JSON.stringify({ t: 's', r })); show(r) }) }, 700) }
-    function show(r) { if (r.w) my++; else opp++; $('#ms').textContent = my; $('#os').textContent = opp; const d = document.createElement('div'); d.className = 'instr'; d.style.fontSize = '18vw'; d.textContent = r.w ? 'WIN!' : 'LOSE'; $('#gameArea').appendChild(d); setTimeout(() => { d.remove(); if (host) { rnd++; next() } }, 1100) }
-    function end(m) { $('#gameArea').innerHTML = `<div class="instr" style="font-size:14vw">${m.my > m.opp ? 'VICTORY' : 'DEFEAT'}<br><span style="font-size:8vw">${m.my}-${m.opp}</span></div>` }
-    const games = {
-      fly: { i: 'TAP!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const f = document.createElement('div'); f.className = 'fly'; f.textContent = '🪰'; a.appendChild(f); const mv = () => { f.style.left = Math.random() * 80 + '%'; f.style.top = Math.random() * 70 + '%' }; mv(); const iv = setInterval(mv, 400); const t = setTimeout(() => { clearInterval(iv); res({ w: 0 }) }, 3500); f.onclick = () => { clearInterval(iv); clearTimeout(t); beep(1200, 60); res({ w: 1 }) } }) },
-      dont: { i: "DON'T!", f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn">DON\'T</div>'; let ok = true; a.onpointerdown = () => ok = false; setTimeout(() => res({ w: ok ? 1 : 0 }), 3000) }) },
-      pop: { i: 'POP!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; let c = 0; for (let i = 0; i < 7; i++) { const b = document.createElement('div'); b.className = 'balloon'; b.textContent = '🎈'; b.style.left = 5 + i * 13 + '%'; b.style.bottom = '-20%'; b.style.animationDelay = i * .2 + 's'; b.onclick = () => { b.remove(); c++; if (c >= 7) res({ w: 1 }) }; a.appendChild(b) } setTimeout(() => res({ w: c >= 7 ? 1 : 0 }), 3800) }) },
-      catch: { i: 'CATCH!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const p = document.createElement('div'); p.className = 'basket'; p.textContent = '🧺'; p.style.left = '50%'; a.appendChild(p); let x = 50; const mv = e => { const r = a.getBoundingClientRect(); x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100; p.style.left = x + '%' }; a.onpointermove = mv; a.ontouchmove = mv; let c = 0; const drop = () => { const t = document.createElement('div'); t.className = 'toast'; t.textContent = '🍞'; t.style.left = Math.random() * 80 + 10 + '%'; t.style.top = '0%'; a.appendChild(t); let y = 0; const iv = setInterval(() => { y += 2.5; t.style.top = y + '%'; if (y > 75 && Math.abs(parseFloat(t.style.left) - x) < 12) { clearInterval(iv); t.remove(); c++; if (c >= 3) { clearInterval(sp); res({ w: 1 }) } } if (y > 95) { clearInterval(iv); t.remove() } }, 30) }; const sp = setInterval(drop, 700); drop(); setTimeout(() => { clearInterval(sp); res({ w: c >= 3 ? 1 : 0 }) }, 4000) }) },
-      dodge: { i: 'DODGE!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const p = document.createElement('div'); p.className = 'player'; p.textContent = '🏃'; p.style.left = '50%'; a.appendChild(p); let x = 50; const mv = e => { const r = a.getBoundingClientRect(); x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100; p.style.left = x + '%' }; a.onpointermove = mv; a.ontouchmove = mv; let hit = false; const drop = () => { const b = document.createElement('div'); b.className = 'banana'; b.textContent = '🍌'; b.style.left = Math.random() * 90 + 5 + '%'; b.style.top = '0%'; a.appendChild(b); let y = 0; const iv = setInterval(() => { y += 3; b.style.top = y + '%'; if (y > 70 && Math.abs(parseFloat(b.style.left) - x) < 10) hit = true; if (y > 100) { clearInterval(iv); b.remove() } }, 30) }; const sp = setInterval(drop, 500); setTimeout(() => { clearInterval(sp); res({ w: hit ? 0 : 1 }) }, 3500) }) },
-      swipe: { i: 'SWIPE!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const dirs = [['→', 'right'], ['←', 'left'], ['↑', 'up'], ['↓', 'down']]; const d = dirs[Math.floor(Math.random() * 4)]; a.innerHTML = `<div class="instr" style="font-size:30vw">${d[0]}</div>`; let sx = 0, sy = 0; const ds = e => { const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY }; const us = e => { const p = e.changedTouches ? e.changedTouches[0] : e; const dx = p.clientX - sx, dy = p.clientY - sy; let dir = ''; if (Math.abs(dx) > Math.abs(dy)) dir = dx > 30 ? 'right' : 'left'; else dir = dy > 30 ? 'down' : 'up'; res({ w: dir === d[1] ? 1 : 0 }) }; a.onpointerdown = ds; a.onpointerup = us; a.ontouchstart = ds; a.ontouchend = us; setTimeout(() => res({ w: 0 }), 2200) }) },
-      triple: { i: 'x3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" id="t">0</div>'; let c = 0; $('#t').onclick = () => { c++; $('#t').textContent = c; if (c === 3) { beep(1100, 40); r({ w: 1 }) } }; setTimeout(() => r({ w: c === 3 ? 1 : 0 }), 2000) }) },
-      hold: { i: 'HOLD!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" style="background:#0a0">HOLD</div>'; const b = a.firstChild; let s; const d = () => s = Date.now(); const u = () => r({ w: Date.now() - s > 1800 ? 1 : 0 }); b.onpointerdown = d; b.onpointerup = u; b.ontouchstart = d; b.ontouchend = u; setTimeout(() => r({ w: 0 }), 3200) }) },
-      shake: { i: 'SHAKE!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="instr" style="font-size:14vw">SHAKE!</div>'; let c = 0, last = 0; const h = e => { const g = e.accelerationIncludingGravity; if (!g) return; if (Math.abs(g.x) + Math.abs(g.y) > 25 && Date.now() - last > 120) { c++; last = Date.now() } }; window.addEventListener('devicemotion', h); a.onclick = () => c += 2; setTimeout(() => { window.removeEventListener('devicemotion', h); r({ w: c > 10 ? 1 : 0 }) }, 2800) }) },
-      trace: { i: 'CIRCLE!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<canvas id="cv" width="300" height="300" style="touch-action:none"></canvas>'; const c = $('#cv'), x = c.getContext('2d'), s = 150; let d = false, p = 0; x.lineWidth = 12; x.strokeStyle = '#fff'; x.beginPath(); x.arc(s, s, 100, 0, Math.PI * 2); x.stroke(); x.globalCompositeOperation = 'destination-out'; const m = e => { if (!d) return; const r = c.getBoundingClientRect(); const X = (e.touches ? e.touches[0].clientX : e.clientX) - r.left; const Y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top; x.beginPath(); x.arc(X, Y, 18, 0, 7); x.fill(); p++ }; c.onpointerdown = () => d = true; c.onpointerup = () => d = false; c.onpointermove = m; c.ontouchstart = () => d = true; c.ontouchend = () => d = false; c.ontouchmove = m; setTimeout(() => r({ w: p > 80 ? 1 : 0 }), 3000) }) },
-      match: { i: 'PAIR!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; const e = ['🍎', '🍎', '🍌', '🍌', '🍇', '🍇'].sort(() => Math.random() - .5); let o = null, found = 0; e.forEach((v, i) => { const d = document.createElement('div'); d.textContent = '❓'; d.style.cssText = 'position:absolute;font-size:14vw;left:' + (10 + (i % 3) * 30) + '%;top:' + (20 + Math.floor(i / 3) * 35) + '%;'; d.onclick = () => { d.textContent = v; if (!o) { o = d } else { if (o.textContent === v && o !== d) { found++; o = null; if (found === 3) r({ w: 1 }) } else { setTimeout(() => { o.textContent = '❓'; d.textContent = '❓'; o = null }, 400) } } }; a.appendChild(d) }); setTimeout(() => r({ w: found === 3 ? 1 : 0 }), 4000) }) },
-      avoid: { i: 'GREEN!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let ok = true; for (let i = 0; i < 12; i++) { const d = document.createElement('div'); const green = Math.random() > .7; d.textContent = green ? '🟢' : '🔴'; d.style.cssText = 'position:absolute;font-size:12vw;left:' + Math.random() * 80 + 5 + '%;top:' + Math.random() * 70 + 10 + '%'; d.onclick = () => { if (!green) ok = false; else d.remove() }; a.appendChild(d) } setTimeout(() => r({ w: ok ? 1 : 0 }), 3000) }) },
-      pump: { i: 'PUMP!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="bal" style="font-size:20vw;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.6)">🎈</div>'; let s = .6; const b = $('#bal'); const p = () => { s += .12; b.style.transform = `translate(-50%,-50%) scale(${s})`; if (s > 1.8) r({ w: 1 }) }; a.onclick = p; a.ontouchstart = p; setTimeout(() => r({ w: s > 1.8 ? 1 : 0 }), 3000) }) },
-      whack: { i: 'WHACK!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let h = 0; for (let i = 0; i < 9; i++) { const d = document.createElement('div'); d.style.cssText = 'position:absolute;width:26%;height:26%;left:' + (5 + (i % 3) * 32) + '%;top:' + (10 + Math.floor(i / 3) * 28) + '%;background:#630;border:3px solid #000;border-radius:50%'; a.appendChild(d) } const spawn = () => { const ps = [...a.children]; const p = ps[Math.floor(Math.random() * 9)]; p.innerHTML = '<div style="font-size:10vw;cursor:pointer">🐹</div>'; p.firstChild.onclick = () => { h++; p.innerHTML = ''; if (h >= 3) r({ w: 1 }) }; setTimeout(() => p.innerHTML = '', 800) }; const iv = setInterval(spawn, 600); setTimeout(() => { clearInterval(iv); r({ w: h >= 3 ? 1 : 0 }) }, 3500) }) },
-      stop: { i: 'STOP!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="bar" style="position:absolute;left:10%;top:45%;width:80%;height:20px;background:#444;border:3px solid #000"><div id="mk" style="position:absolute;left:40%;width:20%;height:100%;background:#0f0"></div><div id="pt" style="position:absolute;left:0%;width:8px;height:28px;background:#fff;top:-4px;transition:left.02s linear"></div></div>'; let x = 0, d = 1; const pt = $('#pt'); const iv = setInterval(() => { x += d * 2; if (x > 100 || x < 0) d *= -1; pt.style.left = x + '%'; }, 20); a.onclick = () => { clearInterval(iv); const ok = x > 38 && x < 62; r({ w: ok ? 1 : 0 }) }; setTimeout(() => { clearInterval(iv); r({ w: 0 }) }, 3000) }) },
-      drag: { i: 'DRAG!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="tg" style="position:absolute;left:70%;top:30%;font-size:16vw">🎯</div><div id="st" style="position:absolute;left:20%;top:60%;font-size:14vw;touch-action:none">⭐</div>'; const s = $('#st'), tg = $('#tg'); let drag = false; const mv = e => { if (!drag) return; const rc = a.getBoundingClientRect(); const x = (e.touches ? e.touches[0].clientX : e.clientX) - rc.left; const y = (e.touches ? e.touches[0].clientY : e.clientY) - rc.top; s.style.left = x - 20 + 'px'; s.style.top = y - 20 + 'px'; const tr = tg.getBoundingClientRect(); if (Math.abs(x - tr.left - rc.width * .7) < 40 && Math.abs(y - tr.top - rc.height * .3) < 40) r({ w: 1 }) }; s.onpointerdown = () => drag = true; document.onpointerup = () => drag = false; document.onpointermove = mv; s.ontouchstart = () => drag = true; document.ontouchend = () => drag = false; document.ontouchmove = mv; setTimeout(() => r({ w: 0 }), 3500) }) },
-      scratch: { i: 'SCRATCH!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div style="position:absolute;inset:20%;background:#fff;color:#000;display:flex;align-items:center;justify-content:center;font-size:12vw;border:4px solid #000">💎</div><canvas id="sc" width="300" height="300" style="position:absolute;inset:20%;width:60%;height:60%"></canvas>'; const c = $('#sc'), x = c.getContext('2d'); x.fillStyle = '#999'; x.fillRect(0, 0, 300, 300); let p = 0; x.globalCompositeOperation = 'destination-out'; const m = e => { const r = c.getBoundingClientRect(); const X = (e.touches ? e.touches[0].clientX : e.clientX) - r.left; const Y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top; x.beginPath(); x.arc(X * 300 / r.width, Y * 300 / r.height, 15, 0, 7); x.fill(); p++ }; c.onpointermove = e => e.buttons && m(e); c.ontouchmove = m; setTimeout(() => r({ w: p > 80 ? 1 : 0 }), 3500) }) },
-      tilt: { i: 'TILT!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="hole" style="position:absolute;right:15%;top:20%;font-size:12vw">🕳️</div><div id="ball" style="position:absolute;left:15%;top:70%;font-size:12vw;transition:.05s">⚽</div>'; const b = $('#ball'); let x = 15, y = 70; const mv = g => { x += g / 3; y -= 0; if (x < 5) x = 5; if (x > 85) x = 85; if (y < 10) y = 10; if (y > 85) y = 85; b.style.left = x + '%'; b.style.top = y + '%'; if (Math.abs(x - 85) < 8 && Math.abs(y - 20) < 12) r({ w: 1 }) }; window.addEventListener('deviceorientation', e => mv(e.gamma || 0)); let drag = false; a.onpointerdown = () => drag = true; a.onpointerup = () => drag = false; a.onpointermove = e => { if (!drag) return; const rc = a.getBoundingClientRect(); x = (e.clientX - rc.left) / rc.width * 100; y = (e.clientY - rc.top) / rc.height * 100; mv(0) }; setTimeout(() => r({ w: 0 }), 4000) }) }
+      order: { i: '1-2-3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let current = 1; const zones = [{x:15,y:20}, {x:65,y:45}, {x:25,y:70}].sort(() => Math.random() - 0.5); for(let i=1; i<=3; i++) { const d = document.createElement('div'); d.style.cssText = `position:absolute;left:${zones[i-1].x}%;top:${zones[i-1].y}%;width:clamp(60px,22vw,120px);height:clamp(60px,22vw,120px);background:var(--y);color:#000;border:4px solid #000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:clamp(24px,10vw,60px);font-weight:900;box-shadow:0 5px 0 #000;cursor:pointer;transition:transform 0.1s, background 0.1s`; d.textContent = i; d.onclick = () => { sfxClick(); if(i === current) { d.style.background = '#00E676'; d.style.transform = 'scale(1.1)'; current++; if(current > 3) r({w:1}); } else { d.style.background = '#FF1744'; d.style.transform = 'scale(0.9)'; setTimeout(() => r({w:0}), 200); } }; a.appendChild(d); } setTimeout(() => r({w:0}), 3500); }) }
     };
   </script>
 </body>
