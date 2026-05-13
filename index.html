@@ -59,7 +59,7 @@
     }
 
     .logo {
-      margin: 10vh auto 2vh; /* Lowered the title */
+      margin: 10vh auto 2vh;
       text-align: center;
       filter: drop-shadow(0 6px 0 #000)
     }
@@ -106,16 +106,16 @@
       border-radius: 20px;
       box-shadow: 0 7px 0 #000;
       transition: transform 0.2s;
-      text-align: center; /* Center elements inside card */
+      text-align: center;
     }
 
     .btn {
       width: 100%;
-      max-width: 320px; /* Limit width */
-      display: block; /* Centering */
-      margin: 12px auto; /* Centering */
-      padding: 22px; /* Enlarged padding */
-      font-size: 26px; /* Enlarged font */
+      max-width: 320px;
+      display: block;
+      margin: 12px auto;
+      padding: 22px;
+      font-size: 26px;
       font-weight: 900;
       border: 4px solid #000;
       border-radius: 14px;
@@ -316,22 +316,21 @@
       actx = new (window.AudioContext || window.webkitAudioContext)();
       
       bgmGain = actx.createGain();
-      bgmGain.gain.value = 0.04; // Quiet BGM
+      bgmGain.gain.value = 0.04; 
       bgmGain.connect(actx.destination);
       
       sfxGain = actx.createGain();
-      sfxGain.gain.value = 0.15; // Louder SFX
+      sfxGain.gain.value = 0.15; 
       sfxGain.connect(actx.destination);
       
       playBGM();
     };
     
-    // Start audio engine on first interaction
     document.addEventListener('pointerdown', initAudio, { once: true });
 
     const playBGM = () => {
       if (!actx || !$('#lobby').classList.contains('active') && !$('#game').classList.contains('active')) return;
-      const notes = [220, 261.63, 329.63, 392.00, 440, 523.25]; // Retro arpeggio notes
+      const notes = [220, 261.63, 329.63, 392.00, 440, 523.25]; 
       
       const playNote = () => {
         if (actx.state === 'suspended') actx.resume();
@@ -339,7 +338,6 @@
         const g = actx.createGain();
         o.type = 'triangle';
         o.frequency.value = notes[bgmStep % notes.length];
-        // Occasional zany pitch shift
         if (Math.random() > 0.9) o.frequency.value *= 1.5; 
         
         g.gain.setValueAtTime(1, actx.currentTime);
@@ -479,10 +477,10 @@
         if (my >= 5 || opp >= 5 || rnd > 9) { dc.send(JSON.stringify({ t: 's', my, opp })); return end({ my, opp }) } 
       }
 
-      // Speed up BGM as rounds increase!
+      // Speed up BGM as rounds increase
       bgmTempo = Math.max(90, 220 - (rnd * 8));
 
-      const list = ['fly', 'dont', 'pop', 'catch', 'dodge', 'swipe', 'triple', 'hold', 'mash', 'trace', 'match', 'avoid', 'pump', 'whack', 'stop', 'drag', 'scratch', 'find', 'feed', 'order']; 
+      const list = ['fly', 'dont', 'pop', 'catch', 'dodge', 'swipe', 'triple', 'hold', 'mash', 'trace', 'match', 'avoid', 'pump', 'whack', 'stop', 'drag', 'scratch', 'find', 'feed', 'order', 'jump', 'slice', 'scrub', 'math', 'shoot']; 
       let g; do { g = list[Math.floor(Math.random() * list.length)] } while (g === last); 
       last = g; 
       const d = { t: 'r', g, rnd, at: Date.now() + 900 }; 
@@ -540,7 +538,7 @@
     }
     
     function end(m) { 
-      bgmTempo = 300; // Slow sad/happy tempo for end
+      bgmTempo = 300; 
       if (m.isSolo) {
         const avg = times.length ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(2) : '--';
         $('#gameArea').innerHTML = `<div class="instr" style="font-size:clamp(40px, 16vw, 90px);">GAME OVER<br><span style="font-size:clamp(20px, 8vw, 40px)">WINS: ${m.my} <br> AVG TIME: ${avg}s</span></div>`;
@@ -563,7 +561,33 @@
       dodge: { i: 'DODGE!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const p = document.createElement('div'); p.className = 'player'; p.textContent = '🏃'; p.style.left = '50%'; a.appendChild(p); let x = 50; const mv = e => { const r = a.getBoundingClientRect(); x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * 100; p.style.left = x + '%' }; a.onpointermove = mv; a.ontouchmove = mv; let hit = false; const drop = () => { const b = document.createElement('div'); b.className = 'banana'; b.textContent = '🍌'; b.style.left = Math.random() * 80 + 10 + '%'; b.style.top = '0%'; a.appendChild(b); let y = 0; const iv = setInterval(() => { y += 3; b.style.top = y + '%'; if (y > 70 && Math.abs(parseFloat(b.style.left) - x) < 12) hit = true; if (y > 100) { clearInterval(iv); b.remove() } }, 30) }; const sp = setInterval(drop, 500); setTimeout(() => { clearInterval(sp); res({ w: hit ? 0 : 1 }) }, 3500) }) },
       swipe: { i: 'SWIPE!', f: () => new Promise(res => { const a = $('#gameArea'); a.innerHTML = ''; const dirs = [['→', 'right'], ['←', 'left'], ['↑', 'up'], ['↓', 'down']]; const d = dirs[Math.floor(Math.random() * 4)]; a.innerHTML = `<div class="instr" style="font-size:clamp(60px, 30vw, 150px)">${d[0]}</div>`; let sx = 0, sy = 0; const ds = e => { const p = e.touches ? e.touches[0] : e; sx = p.clientX; sy = p.clientY }; const us = e => { const p = e.changedTouches ? e.changedTouches[0] : e; const dx = p.clientX - sx, dy = p.clientY - sy; let dir = ''; if (Math.abs(dx) > Math.abs(dy)) dir = dx > 30 ? 'right' : 'left'; else dir = dy > 30 ? 'down' : 'up'; res({ w: dir === d[1] ? 1 : 0 }) }; a.onpointerdown = ds; a.onpointerup = us; a.ontouchstart = ds; a.ontouchend = us; setTimeout(() => res({ w: 0 }), 2200) }) },
       triple: { i: 'x3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" id="t" style="transition: transform 0.05s">0</div>'; let c = 0; $('#t').onclick = () => { c++; sfxClick(); $('#t').textContent = c; $('#t').style.transform = `translate(-50%, -50%) scale(${1 - c*0.05})`; if (c === 3) { r({ w: 1 }) } }; setTimeout(() => r({ w: c === 3 ? 1 : 0 }), 2000) }) },
-      hold: { i: 'HOLD!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" style="background:#0a0">HOLD</div>'; const b = a.firstChild; let s; const d = () => { s = Date.now(); sfxClick(); }; const u = () => r({ w: Date.now() - s > 1800 ? 1 : 0 }); b.onpointerdown = d; b.onpointerup = u; b.ontouchstart = d; b.ontouchend = u; setTimeout(() => r({ w: 0 }), 3200) }) },
+      hold: { i: 'HOLD!', f: () => new Promise(r => { 
+        const a = $('#gameArea'); 
+        a.innerHTML = '<div class="dontbtn" style="background:#0a0; overflow:hidden; position:relative; transition: transform 0.1s;"><div id="hf" style="position:absolute;bottom:0;left:0;width:100%;height:0%;background:rgba(255,255,255,0.4);transition:height 1.8s linear;pointer-events:none;"></div><span id="ht" style="position:relative;z-index:2;pointer-events:none;">HOLD</span></div>'; 
+        const b = a.firstChild; 
+        let s = 0, timer; 
+        const d = (e) => { 
+          if(s) return; 
+          if(e.cancelable) e.preventDefault();
+          s = Date.now(); 
+          sfxClick(); 
+          $('#hf').style.height = '100%'; 
+          timer = setTimeout(() => { 
+            $('#ht').textContent = 'LET GO!'; 
+            b.style.transform = 'translate(-50%, -50%) scale(1.15)'; 
+            playSFX(1200, 100, 0.6, 'sine'); 
+          }, 1800); 
+        }; 
+        const u = () => { 
+          if(!s) return; 
+          clearTimeout(timer); 
+          r({ w: Date.now() - s > 1800 ? 1 : 0 }); 
+          s = 0; 
+        }; 
+        b.onpointerdown = d; b.onpointerup = u; b.onpointerleave = u; b.onpointercancel = u;
+        b.ontouchstart = d; b.ontouchend = u; b.ontouchcancel = u;
+        setTimeout(() => { clearTimeout(timer); if(s) r({ w: 0 }); }, 3200);
+      }) },
       mash: { i: 'MASH!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div class="dontbtn" id="mbtn" style="background:var(--p); transition: transform 0.05s ease-out">0</div>'; let c = 0; $('#mbtn').onclick = () => { c++; sfxClick(); $('#mbtn').textContent = c; $('#mbtn').style.transform = `translate(-50%, -50%) scale(${1 + c*0.04})`; if (c >= 12) { r({ w: 1 }) } }; setTimeout(() => r({ w: c >= 12 ? 1 : 0 }), 3200) }) },
       trace: { i: 'CIRCLE!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<canvas id="cv" width="300" height="300" style="touch-action:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vw"></canvas>'; const c = $('#cv'), x = c.getContext('2d'), s = 150; let d = false, p = 0; x.lineWidth = 12; x.strokeStyle = '#fff'; x.beginPath(); x.arc(s, s, 100, 0, Math.PI * 2); x.stroke(); x.globalCompositeOperation = 'destination-out'; const m = e => { if (!d) return; const r = c.getBoundingClientRect(); const scaleX = c.width / r.width; const scaleY = c.height / r.height; const X = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) * scaleX; const Y = ((e.touches ? e.touches[0].clientY : e.clientY) - r.top) * scaleY; x.beginPath(); x.arc(X, Y, 20, 0, 7); x.fill(); p++; if(p%5===0) sfxClick(); }; c.onpointerdown = () => d = true; c.onpointerup = () => d = false; c.onpointermove = m; c.ontouchstart = () => d = true; c.ontouchend = () => d = false; c.ontouchmove = m; setTimeout(() => r({ w: p > 60 ? 1 : 0 }), 3000) }) },
       match: { i: 'PAIR!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; const e = ['🍎', '🍎', '🍌', '🍌', '🍇', '🍇'].sort(() => Math.random() - .5); let o = null, found = 0; e.forEach((v, i) => { const d = document.createElement('div'); d.className = 'find-item'; d.textContent = '❓'; d.style.cssText += `left:${15 + (i % 3) * 28}%; top:${20 + Math.floor(i / 3) * 35}%;`; d.onclick = () => { sfxClick(); d.textContent = v; d.style.transform = 'scale(1.2) rotate(10deg)'; if (!o) { o = d } else { if (o.textContent === v && o !== d) { found++; o = null; if (found === 3) r({ w: 1 }) } else { setTimeout(() => { o.textContent = '❓'; d.textContent = '❓'; o.style.transform = 'scale(1)'; d.style.transform = 'scale(1)'; o = null }, 400) } } }; a.appendChild(d) }); setTimeout(() => r({ w: found === 3 ? 1 : 0 }), 4000) }) },
@@ -575,7 +599,14 @@
       scratch: { i: 'SCRATCH!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div style="position:absolute;inset:20%;background:#fff;color:#000;display:flex;align-items:center;justify-content:center;font-size:clamp(40px,12vw,80px);border:4px solid #000">💎</div><canvas id="sc" width="300" height="300" style="position:absolute;inset:20%;width:60%;height:60%;touch-action:none;"></canvas>'; const c = $('#sc'), x = c.getContext('2d'); x.fillStyle = '#999'; x.fillRect(0, 0, 300, 300); let p = 0; x.globalCompositeOperation = 'destination-out'; const m = e => { const r = c.getBoundingClientRect(); const X = (e.touches ? e.touches[0].clientX : e.clientX) - r.left; const Y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top; x.beginPath(); x.arc(X * 300 / r.width, Y * 300 / r.height, 22, 0, 7); x.fill(); p++; if(p%5===0) sfxClick(); }; c.onpointerdown = () => { c.onpointermove = m; }; document.onpointerup = () => { c.onpointermove = null; }; c.ontouchmove = m; setTimeout(() => r({ w: p > 60 ? 1 : 0 }), 3500) }) },
       find: { i: 'FIND!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; const emojis = ['😀','😃','😄','😁','😆','😅','😂','🤣']; const base = emojis[Math.floor(Math.random()*emojis.length)]; let odd; do { odd = emojis[Math.floor(Math.random()*emojis.length)]; } while(odd === base); const total = 12; const oddIndex = Math.floor(Math.random() * total); for(let i=0; i<total; i++) { const d = document.createElement('div'); d.className = 'find-item'; d.textContent = i === oddIndex ? odd : base; d.style.cssText += `left:${10 + (i%4)*22}%; top:${20 + Math.floor(i/4)*22}%;`; d.onclick = () => { sfxClick(); if(i === oddIndex) { d.style.transform = 'scale(1.8) rotate(15deg)'; r({w:1}); } else { d.style.transform = 'scale(0.5)'; r({w:0}); } }; a.appendChild(d); } setTimeout(() => r({w:0}), 4000); }) },
       feed: { i: 'FEED!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="m" style="position:absolute;right:10%;top:40%;font-size:clamp(50px,16vw,100px);transition:transform 0.1s">😮</div><div id="f" style="position:absolute;left:10%;top:40%;font-size:clamp(40px,12vw,80px);touch-action:none;z-index:2;cursor:pointer;transition:transform 0.1s">🍔</div>'; const f = $('#f'), m = $('#m'); let drag = false; const mv = e => { if(!drag) return; const rc = a.getBoundingClientRect(); const x = (e.touches ? e.touches[0].clientX : e.clientX) - rc.left; const y = (e.touches ? e.touches[0].clientY : e.clientY) - rc.top; f.style.left = x - 25 + 'px'; f.style.top = y - 25 + 'px'; const mRect = m.getBoundingClientRect(); const mX = mRect.left - rc.left + mRect.width / 2; const mY = mRect.top - rc.top + mRect.height / 2; if (Math.hypot(x - mX, y - mY) < 60) { m.textContent = '😋'; m.style.transform = 'scale(1.4)'; f.style.display = 'none'; drag = false; r({ w: 1 }); } }; f.onpointerdown = () => { drag = true; f.style.transform = 'scale(1.2)'; }; document.onpointerup = () => { drag = false; f.style.transform = 'scale(1)'; }; document.onpointermove = mv; f.ontouchstart = () => { drag = true; f.style.transform = 'scale(1.2)'; }; document.ontouchend = () => { drag = false; f.style.transform = 'scale(1)'; }; document.ontouchmove = mv; setTimeout(() => r({w:0}), 3500); }) },
-      order: { i: '1-2-3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let current = 1; const zones = [{x:15,y:20}, {x:65,y:45}, {x:25,y:70}].sort(() => Math.random() - 0.5); for(let i=1; i<=3; i++) { const d = document.createElement('div'); d.style.cssText = `position:absolute;left:${zones[i-1].x}%;top:${zones[i-1].y}%;width:clamp(60px,22vw,120px);height:clamp(60px,22vw,120px);background:var(--y);color:#000;border:4px solid #000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:clamp(24px,10vw,60px);font-weight:900;box-shadow:0 5px 0 #000;cursor:pointer;transition:transform 0.1s, background 0.1s`; d.textContent = i; d.onclick = () => { sfxClick(); if(i === current) { d.style.background = '#00E676'; d.style.transform = 'scale(1.1)'; current++; if(current > 3) r({w:1}); } else { d.style.background = '#FF1744'; d.style.transform = 'scale(0.9)'; setTimeout(() => r({w:0}), 200); } }; a.appendChild(d); } setTimeout(() => r({w:0}), 3500); }) }
+      order: { i: '1-2-3!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let current = 1; const zones = [{x:15,y:20}, {x:65,y:45}, {x:25,y:70}].sort(() => Math.random() - 0.5); for(let i=1; i<=3; i++) { const d = document.createElement('div'); d.style.cssText = `position:absolute;left:${zones[i-1].x}%;top:${zones[i-1].y}%;width:clamp(60px,22vw,120px);height:clamp(60px,22vw,120px);background:var(--y);color:#000;border:4px solid #000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:clamp(24px,10vw,60px);font-weight:900;box-shadow:0 5px 0 #000;cursor:pointer;transition:transform 0.1s, background 0.1s`; d.textContent = i; d.onclick = () => { sfxClick(); if(i === current) { d.style.background = '#00E676'; d.style.transform = 'scale(1.1)'; current++; if(current > 3) r({w:1}); } else { d.style.background = '#FF1744'; d.style.transform = 'scale(0.9)'; setTimeout(() => r({w:0}), 200); } }; a.appendChild(d); } setTimeout(() => r({w:0}), 3500); }) },
+      
+      /* --- NEW MICROGAMES --- */
+      jump: { i: 'JUMP!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="p" style="position:absolute;left:20%;bottom:20%;font-size:clamp(40px,16vw,90px);transition:bottom 0.05s linear">🧍</div><div id="o" style="position:absolute;left:100%;bottom:20%;font-size:clamp(36px,14vw,80px)">🚕</div>'; let v = 0, y = 20, ox = 100, j = false, over = false; const p = $('#p'), o = $('#o'); const loop = setInterval(() => { if(over) return; ox -= (2.5 + (rnd*0.1)); o.style.left = ox + '%'; if(j) { y += v; v -= 1; } if(y <= 20) { y = 20; j = false; v = 0; } p.style.bottom = y + '%'; if(ox < 35 && ox > 5 && y < 40) { over = true; clearInterval(loop); r({w:0}); } if(ox < -20) { over = true; clearInterval(loop); r({w:1}); } }, 30); a.onpointerdown = () => { if(!j) { j = true; v = 9; sfxClick(); } }; }) },
+      slice: { i: 'SLICE!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="m" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:clamp(60px,25vw,150px);cursor:crosshair;touch-action:none"><span id="m1" style="display:inline-block;transition:all 0.2s">🍉</span></div>'; let drag = false; const ml = $('#m1'); const m = e => { if(!drag) return; const rc = $('#m').getBoundingClientRect(); const x = e.touches ? e.touches[0].clientX : e.clientX; const y = e.touches ? e.touches[0].clientY : e.clientY; if(x > rc.left && x < rc.right && y > rc.top && y < rc.bottom) { drag = false; sfxClick(); ml.style.transform = 'rotate(-30deg) translateX(-30px)'; ml.insertAdjacentHTML('afterend', '<span style="display:inline-block;transform:rotate(30deg) translateX(30px)">🍉</span>'); r({w:1}); } }; a.onpointerdown = () => drag = true; document.onpointerup = () => drag = false; a.onpointermove = m; a.ontouchmove = m; setTimeout(() => r({w:0}), 3500); }) },
+      scrub: { i: 'SCRUB!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = ''; let c = 10 + Math.floor(rnd/2); for(let i=0; i<c; i++) { const d = document.createElement('div'); d.className = 'dirt'; d.style.cssText = `position:absolute;width:${Math.random()*40+40}px;height:${Math.random()*40+40}px;background:#78350f;border-radius:50%;left:${Math.random()*80+10}%;top:${Math.random()*70+15}%;transform:translate(-50%,-50%);touch-action:none`; a.appendChild(d); } const m = e => { const t = e.touches ? e.touches[0] : e; const el = document.elementFromPoint(t.clientX, t.clientY); if(el && el.classList.contains('dirt')) { el.remove(); c--; if(c%3===0) sfxClick(); if(c<=0) r({w:1}); } }; a.onpointerdown = m; a.onpointermove = e => { if(e.buttons) m(e); }; a.ontouchmove = m; setTimeout(() => r({w:0}), 4000); }) },
+      math: { i: 'SOLVE!', f: () => new Promise(r => { const a = $('#gameArea'); const n1 = Math.floor(Math.random()*5)+1; const n2 = Math.floor(Math.random()*5)+1; const ans = n1 + n2; let opts = [ans, ans + (Math.random()>0.5?1:-1), ans + (Math.random()>0.5?2:-2)]; opts.sort(() => Math.random() - 0.5); a.innerHTML = `<div style="position:absolute;top:15%;width:100%;text-align:center;font-size:clamp(40px,18vw,90px);font-weight:900">${n1} + ${n2}</div>`; opts.forEach((o, i) => { const d = document.createElement('div'); d.style.cssText = `position:absolute;left:${15 + i*28}%;bottom:25%;width:clamp(60px,22vw,120px);height:clamp(60px,22vw,120px);background:var(--b);border:4px solid #000;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:clamp(30px,10vw,60px);cursor:pointer;transition:transform 0.1s`; d.textContent = o; d.onclick = () => { sfxClick(); d.style.transform='scale(1.2)'; if(o===ans) r({w:1}); else { d.style.background='var(--r)'; r({w:0}); } }; a.appendChild(d); }); setTimeout(() => r({w:0}), 4500); }) },
+      shoot: { i: 'SHOOT!', f: () => new Promise(r => { const a = $('#gameArea'); a.innerHTML = '<div id="tg" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:clamp(50px,20vw,120px);cursor:crosshair">👾</div>'; let x = 50, d = 1, t = $('#tg'); const loop = setInterval(() => { x += d * (3 + rnd*0.2); if(x > 80 || x < 20) d *= -1; t.style.left = x + '%'; }, 30); t.onpointerdown = (e) => { e.stopPropagation(); clearInterval(loop); sfxClick(); t.textContent='💥'; r({w:1}); }; a.onpointerdown = () => { clearInterval(loop); sfxClick(); r({w:0}); }; setTimeout(() => { clearInterval(loop); r({w:0}); }, 3500); }) }
     };
   </script>
 </body>
