@@ -645,9 +645,7 @@ function createGames() {
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
-        const isGreen = Math.random() < 0.25;
-        const color = isGreen ? 'var(--g)' : 'var(--r)';
-        ctx.area.innerHTML = `<div class="dontbtn" style="background:${color}">DON'T</div>`;
+        ctx.area.innerHTML = '<div class="dontbtn" style="background:var(--r)">DON\'T</div>';
         let safe = true;
         ctx.area.onpointerdown = () => {
           safe = false;
@@ -660,33 +658,11 @@ function createGames() {
     },
   };
 
-  games.do = {
-    id: "do",
-    prompt: "DO!",
-    start(ctx) {
-      return new Promise((resolve) => {
-        const done = finishOnce(ctx.scope, resolve);
-        const isRed = Math.random() < 0.25;
-        const color = isRed ? 'var(--r)' : 'var(--g)';
-        ctx.area.innerHTML = `<div class="dontbtn" style="background:${color}">DO!</div>`;
-        let safe = false;
-        ctx.area.onpointerdown = () => {
-          ctx.click();
-          safe = true;
-          done({ won: true });
-        };
-        ctx.scope.addCleanup(() => {
-          ctx.area.onpointerdown = null;
-        });
-        ctx.scope.setTimeout(() => done({ won: safe }), 4000);
-      });
-    },
-  };
-
   games.pop = {
     id: "pop",
     prompt: "POP!",
     hint: "POP 5 BALLOONS",
+    duration: 17000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
@@ -695,72 +671,96 @@ function createGames() {
           const balloon = document.createElement("div");
           balloon.className = "balloon";
           balloon.textContent = "🎈";
-          balloon.style.left = 8 + i * 17 + "%";
-          balloon.style.bottom = "-20%";
-          balloon.style.animationDelay = i * 0.45 + "s";
-          balloon.style.animationDuration = "5.8s";
-          balloon.onclick = () => {
+          balloon.style.left = 7 + i * 18 + "%";
+          balloon.style.bottom = "-24%";
+          balloon.style.animationDelay = i * 0.72 + "s";
+          balloon.style.animationDuration = "8.6s";
+          balloon.style.fontSize = "14cqw";
+          balloon.onpointerdown = (event) => {
+            event.stopPropagation();
+            if (!balloon.isConnected) return;
             ctx.click();
-            balloon.style.transform = "scale(0)";
-            balloon.remove();
+            const areaRect = ctx.area.getBoundingClientRect();
+            const rect = balloon.getBoundingClientRect();
+            ctx.fx.spawn(rect.left - areaRect.left + rect.width / 2, rect.top - areaRect.top + rect.height / 2, false);
+            balloon.style.transition = "transform 0.16s ease, opacity 0.16s ease";
+            balloon.style.transform = "scale(0.1) rotate(12deg)";
+            balloon.style.opacity = "0";
+            ctx.scope.setTimeout(() => balloon.remove(), 120);
             popped += 1;
             if (popped >= 5) done({ won: true });
           };
           ctx.area.appendChild(balloon);
         }
-        ctx.scope.setTimeout(() => done({ won: popped >= 5 }), 12000);
+        ctx.scope.setTimeout(() => done({ won: popped >= 5 }), 17000);
       });
     },
   };
 
+
   games.catch = {
     id: "catch",
     prompt: "CATCH!",
+    hint: "CATCH 3 TOASTS",
+    duration: 17000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
-        ctx.area.innerHTML = '<div style="position:absolute;bottom:20px;font-size:15cqw;left:50%;transform:translateX(-50%)">🧺</div>';
-        const basket = ctx.area.firstElementChild;
+        ctx.area.innerHTML =
+          '<div id="catchScore" style="position:absolute;top:9%;width:100%;text-align:center;color:#fff;font-size:7cqw;-webkit-text-stroke:2px #000;text-shadow:0 4px 0 #000">0 / 3</div>' +
+          '<div style="position:absolute;bottom:18px;font-size:20cqw;left:50%;transform:translateX(-50%);filter:drop-shadow(0 5px 0 rgba(0,0,0,0.28))">🧺</div>';
+        const score = $("#catchScore");
+        const basket = ctx.area.lastElementChild;
         let x = 50;
         let caught = 0;
         const move = (event) => {
           const point = event.touches ? event.touches[0] : event;
           const rect = ctx.area.getBoundingClientRect();
-          x = ((point.clientX - rect.left) / rect.width) * 100;
+          x = Math.max(8, Math.min(92, ((point.clientX - rect.left) / rect.width) * 100));
           basket.style.left = x + "%";
         };
         ctx.area.onpointermove = move;
+        ctx.area.onpointerdown = move;
         ctx.scope.addCleanup(() => {
           ctx.area.onpointermove = null;
+          ctx.area.onpointerdown = null;
         });
         const drop = () => {
           const toast = document.createElement("div");
+          const startX = Math.random() * 66 + 17;
           toast.textContent = "🍞";
-          toast.style.cssText = `position:absolute;font-size:12cqw;left:${Math.random() * 70 + 15}%;top:0%`;
+          toast.style.cssText =
+            `position:absolute;font-size:12cqw;left:${startX}%;top:-8%;filter:drop-shadow(0 4px 0 rgba(0,0,0,0.24));`;
           ctx.area.appendChild(toast);
-          let y = 0;
+          let y = -8;
           const fall = ctx.scope.setInterval(() => {
-            y += 2.5;
+            y += 1.65;
             toast.style.top = y + "%";
-            if (y > 75 && Math.abs(parseFloat(toast.style.left) - x) < 15) {
+            const toastX = parseFloat(toast.style.left);
+            if (y > 72 && y < 91 && Math.abs(toastX - x) < 23) {
               clearInterval(fall);
+              const areaRect = ctx.area.getBoundingClientRect();
+              const rect = toast.getBoundingClientRect();
+              ctx.fx.spawn(rect.left - areaRect.left + rect.width / 2, rect.top - areaRect.top + rect.height / 2, false);
               toast.remove();
               caught += 1;
+              score.textContent = `${caught} / 3`;
               ctx.click();
               if (caught >= 3) done({ won: true });
             }
-            if (y > 95) {
+            if (y > 104) {
               clearInterval(fall);
               toast.remove();
             }
           }, 30);
         };
         drop();
-        ctx.scope.setInterval(drop, 700);
-        ctx.scope.setTimeout(() => done({ won: caught >= 3 }), 14000);
+        ctx.scope.setInterval(drop, 1050);
+        ctx.scope.setTimeout(() => done({ won: caught >= 3 }), 17000);
       });
     },
   };
+
 
   games.dodge = {
     id: "dodge",
@@ -1082,7 +1082,6 @@ function createGames() {
               item.style.transform = "scaleX(1) rotateY(0deg)";
               item.style.filter = "brightness(1)";
             }, 180);
-
             if (!open) {
               open = item;
               return;
@@ -1157,60 +1156,94 @@ function createGames() {
   games.pump = {
     id: "pump",
     prompt: "PUMP!",
+    hint: "STEADY TAPS",
+    duration: 14000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div style="font-size:20cqw;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.6)">🎈</div>';
-        const balloon = ctx.area.firstElementChild;
+          '<div id="pumpHint" style="position:absolute;top:10%;width:100%;text-align:center;color:#fff;font-size:6cqw;-webkit-text-stroke:1px rgba(0,0,0,0.45);text-shadow:0 4px 0 rgba(0,0,0,0.25)">Make it big and gentle</div>' +
+          '<div style="font-size:20cqw;position:absolute;left:50%;top:54%;transform:translate(-50%,-50%) scale(0.6);filter:drop-shadow(0 8px 0 rgba(0,0,0,0.22));transition:transform 0.12s ease">🎈</div>';
+        const balloon = ctx.area.lastElementChild;
         let size = 0.6;
         ctx.area.onclick = () => {
           ctx.click();
-          size += 0.12;
+          size += 0.08;
           balloon.style.transform = `translate(-50%,-50%) scale(${size})`;
-          if (size > 1.8) done({ won: true });
+          if (size > 2.05) done({ won: true });
         };
         ctx.scope.addCleanup(() => {
           ctx.area.onclick = null;
         });
-        ctx.scope.setTimeout(() => done({ won: size > 1.8 }), 10000);
+        ctx.scope.setTimeout(() => done({ won: size > 2.05 }), 14000);
       });
     },
   };
 
+
   games.whack = {
     id: "whack",
     prompt: "WHACK!",
+    hint: "TAP 4 POP-UPS",
+    duration: 14000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         let hits = 0;
+        let activeToken = 0;
+        const score = document.createElement("div");
+        score.style.cssText =
+          "position:absolute;left:0;right:0;top:7%;text-align:center;color:#fff;font-size:7cqw;-webkit-text-stroke:2px #000;text-shadow:0 4px 0 #000;z-index:4";
+        score.textContent = "0 / 4";
+        ctx.area.appendChild(score);
+        const holes = [];
         for (let i = 0; i < 9; i += 1) {
           const hole = document.createElement("div");
           hole.style.cssText =
-            `position:absolute;width:24%;height:22%;left:${8 + (i % 3) * 30}%;top:${10 + Math.floor(i / 3) * 28}%;` +
-            "background:#630;border-radius:50%";
+            `position:absolute;width:24%;height:20%;left:${8 + (i % 3) * 30}%;top:${18 + Math.floor(i / 3) * 24}%;` +
+            "background:radial-gradient(ellipse at center,#8d5a2b 0%,#5a3019 58%,#2a160b 100%);border-radius:50%;box-shadow:inset 0 10px 12px rgba(0,0,0,0.38),0 8px 0 rgba(0,0,0,0.18);overflow:hidden";
+          holes.push(hole);
           ctx.area.appendChild(hole);
         }
         const spawn = () => {
-          const hole = ctx.area.children[Math.floor(Math.random() * 9)];
+          activeToken += 1;
+          const token = activeToken;
+          holes.forEach((hole) => {
+            hole.innerHTML = "";
+            hole.dataset.activeToken = "";
+          });
+          const hole = holes[Math.floor(Math.random() * holes.length)];
+          hole.dataset.activeToken = String(token);
           hole.innerHTML =
-            '<div style="font-size:14cqw;cursor:pointer;text-align:center;margin-top:10%">🐹</div>';
-          hole.firstElementChild.onclick = () => {
+            '<div style="font-size:15cqw;cursor:pointer;text-align:center;margin-top:4%;transform:translateY(8%);filter:drop-shadow(0 4px 0 rgba(0,0,0,0.25));transition:transform 0.12s ease">🐹</div>';
+          const mole = hole.firstElementChild;
+          mole.onpointerdown = (event) => {
+            event.stopPropagation();
+            if (hole.dataset.activeToken !== String(token)) return;
             ctx.click();
             hits += 1;
+            score.textContent = `${hits} / 4`;
+            const areaRect = ctx.area.getBoundingClientRect();
+            const rect = mole.getBoundingClientRect();
+            ctx.fx.spawn(rect.left - areaRect.left + rect.width / 2, rect.top - areaRect.top + rect.height / 2, false);
             hole.innerHTML = "";
-            if (hits >= 3) done({ won: true });
+            hole.dataset.activeToken = "";
+            if (hits >= 4) done({ won: true });
           };
           ctx.scope.setTimeout(() => {
-            hole.innerHTML = "";
-          }, 800);
+            if (hole.dataset.activeToken === String(token)) {
+              hole.innerHTML = "";
+              hole.dataset.activeToken = "";
+            }
+          }, 950);
         };
-        ctx.scope.setInterval(spawn, 600);
-        ctx.scope.setTimeout(() => done({ won: hits >= 3 }), 12000);
+        spawn();
+        ctx.scope.setInterval(spawn, 820);
+        ctx.scope.setTimeout(() => done({ won: hits >= 4 }), 14000);
       });
     },
   };
+
 
   games.stop = {
     id: "stop",
@@ -1245,12 +1278,14 @@ function createGames() {
   games.drag = {
     id: "drag",
     prompt: "DRAG!",
+    hint: "PLACE THE PIN",
+    duration: 14000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div id="board" style="position:absolute;left:70%;top:30%;font-size:16cqw">🎯</div>' +
-          '<div id="st" style="position:absolute;left:20%;top:60%;font-size:14cqw;cursor:pointer;touch-action:none">📍</div>';
+          '<div id="board" style="position:absolute;left:68%;top:30%;width:22cqw;height:22cqw;display:flex;align-items:center;justify-content:center;border-radius:999px;background:rgba(255,255,255,0.52);border:3px solid rgba(255,255,255,0.85);box-shadow:0 12px 28px rgba(35,47,95,0.18);font-size:14cqw">🎯</div>' +
+          '<div id="st" style="position:absolute;left:20%;top:60%;font-size:15cqw;cursor:pointer;touch-action:none;filter:drop-shadow(0 5px 0 rgba(0,0,0,0.28));transition:transform 0.12s ease">📍</div>';
         const star = $("#st");
         const board = $("#board");
         let dragging = false;
@@ -1260,24 +1295,27 @@ function createGames() {
           const point = event.touches ? event.touches[0] : event;
           const x = point.clientX - rect.left;
           const y = point.clientY - rect.top;
-          star.style.left = x - 30 + "px";
-          star.style.top = y - 30 + "px";
+          star.style.left = x - 34 + "px";
+          star.style.top = y - 34 + "px";
           const targetRect = board.getBoundingClientRect();
-          if (
-            Math.hypot(
-              point.clientX - (targetRect.left + targetRect.width / 2),
-              point.clientY - (targetRect.top + targetRect.height / 2)
-            ) < 50
-          ) {
+          const distance = Math.hypot(
+            point.clientX - (targetRect.left + targetRect.width / 2),
+            point.clientY - (targetRect.top + targetRect.height / 2)
+          );
+          if (distance < Math.max(68, targetRect.width * 0.42)) {
             dragging = false;
+            board.style.transform = "scale(1.12)";
             done({ won: true });
           }
         };
         const up = () => {
           dragging = false;
+          star.style.transform = "scale(1)";
         };
-        star.onpointerdown = () => {
+        star.onpointerdown = (event) => {
+          event.preventDefault();
           dragging = true;
+          star.style.transform = "scale(1.1)";
         };
         window.addEventListener("pointermove", move);
         window.addEventListener("pointerup", up);
@@ -1286,10 +1324,11 @@ function createGames() {
           window.removeEventListener("pointermove", move);
           window.removeEventListener("pointerup", up);
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+        ctx.scope.setTimeout(() => done({ won: false }), 14000);
       });
     },
   };
+
 
   games.scratch = {
     id: "scratch",
@@ -1485,42 +1524,45 @@ function createGames() {
   games.jump = {
     id: "jump",
     prompt: "JUMP!",
-    hint: "HOP THE CAR",
+    hint: "LOW HOP THE CAR",
     duration: 15000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div id="p" style="position:absolute;left:20%;bottom:20%;font-size:14cqw">🧍</div>' +
-          '<div id="o" style="position:absolute;left:100%;bottom:20%;font-size:12cqw">🚕</div>';
+          '<div style="position:absolute;left:0;right:0;bottom:18%;height:7px;background:rgba(255,255,255,0.72);border-top:3px solid rgba(0,0,0,0.22)"></div>' +
+          '<div id="p" style="position:absolute;left:20%;bottom:20%;font-size:14cqw;transition:filter 0.12s ease">🧍</div>' +
+          '<div id="o" style="position:absolute;left:100%;bottom:20%;font-size:12cqw;filter:drop-shadow(0 4px 0 rgba(0,0,0,0.24))">🚕</div>';
         const player = $("#p");
         const obstacle = $("#o");
         let velocity = 0;
         let y = 20;
         let ox = 100;
         let jumping = false;
-        let speed = 0.92;
+        let speed = 1.28;
         const loop = ctx.scope.setInterval(() => {
-          speed = Math.min(2.2, speed + 0.012);
+          speed = Math.min(2.85, speed + 0.014);
           ox -= speed;
           obstacle.style.left = ox + "%";
           if (jumping) {
             y += velocity;
-            velocity -= 0.58;
+            velocity -= 0.34;
           }
           if (y <= 20) {
             y = 20;
             velocity = 0;
             jumping = false;
+            player.style.filter = "";
           }
           player.style.bottom = y + "%";
-          if (ox < 32 && ox > 9 && y < 38) done({ won: false });
+          if (ox < 32 && ox > 9 && y < 31) done({ won: false });
           if (ox < -20) done({ won: true });
         }, 30);
         ctx.area.onpointerdown = () => {
           if (!jumping) {
             jumping = true;
-            velocity = 9.2;
+            velocity = 4.8;
+            player.style.filter = "brightness(1.12)";
             ctx.click();
           }
         };
@@ -1531,6 +1573,7 @@ function createGames() {
       });
     },
   };
+
 
   games.slice = {
     id: "slice",
@@ -1691,41 +1734,74 @@ function createGames() {
   games.shoot = {
     id: "shoot",
     prompt: "SHOOT!",
+    hint: "3 MISSES OK",
+    duration: 14000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div id="tg" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:15cqw">👾</div>';
+          '<div id="shootHud" style="position:absolute;top:9%;width:100%;text-align:center;color:#fff;font-size:6cqw;-webkit-text-stroke:1px rgba(0,0,0,0.45);text-shadow:0 4px 0 rgba(0,0,0,0.25)">Misses: 0 / 3</div>' +
+          '<div id="tg" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:15cqw;filter:drop-shadow(0 6px 0 rgba(0,0,0,0.28));cursor:crosshair">👾</div>' +
+          '<div id="reticle" style="position:absolute;width:9cqw;height:9cqw;border:3px solid rgba(255,255,255,0.8);border-radius:999px;pointer-events:none;opacity:0;transform:translate(-50%,-50%);box-shadow:0 0 0 2px rgba(0,0,0,0.18)"></div>';
+        const hud = $("#shootHud");
         const target = $("#tg");
+        const reticle = $("#reticle");
         let x = 50;
+        let y = 50;
         let direction = 1;
+        let bob = 0;
+        let misses = 0;
         const loop = ctx.scope.setInterval(() => {
-          x += direction * 3;
-          if (x > 80 || x < 20) direction *= -1;
+          x += direction * 2.65;
+          bob += 0.12;
+          y = 50 + Math.sin(bob) * 9;
+          if (x > 82 || x < 18) direction *= -1;
           target.style.left = x + "%";
+          target.style.top = y + "%";
         }, 30);
+        const showShot = (event) => {
+          const rect = ctx.area.getBoundingClientRect();
+          reticle.style.left = event.clientX - rect.left + "px";
+          reticle.style.top = event.clientY - rect.top + "px";
+          reticle.style.opacity = "1";
+          reticle.style.transform = "translate(-50%,-50%) scale(1.2)";
+          ctx.scope.setTimeout(() => {
+            reticle.style.opacity = "0";
+            reticle.style.transform = "translate(-50%,-50%) scale(0.82)";
+          }, 150);
+        };
         target.onpointerdown = (event) => {
           event.stopPropagation();
           clearInterval(loop);
+          showShot(event);
+          ctx.note(920, 90, 0.55, "triangle");
           done({ won: true });
         };
-        ctx.area.onpointerdown = () => {
-          clearInterval(loop);
-          done({ won: false });
+        ctx.area.onpointerdown = (event) => {
+          showShot(event);
+          misses += 1;
+          hud.textContent = `Misses: ${misses} / 3`;
+          ctx.note(260, 70, 0.28, "sine");
+          if (misses >= 3) {
+            clearInterval(loop);
+            done({ won: false });
+          }
         };
         ctx.scope.addCleanup(() => {
           target.onpointerdown = null;
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+        ctx.scope.setTimeout(() => done({ won: false }), 14000);
       });
     },
   };
 
+
   games.simon = {
     id: "simon",
     prompt: "SIMON!",
-    hint: "REPEAT THE COLORS",
+    hint: "WATCH, THEN REPEAT",
+    duration: 15000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
@@ -1744,60 +1820,66 @@ function createGames() {
           const item = document.createElement("div");
           item.style.cssText =
             `position:absolute;left:${15 + i * 25}%;top:40%;width:20cqw;height:20cqw;` +
-            `background:${colors[i]};border-radius:15px;opacity:0.3;border:4px solid #000;box-shadow:0 6px 0 #000;transition:transform 0.08s, opacity 0.08s, filter 0.08s`;
-          const pulse = () => {
+            `background:${colors[i]};border-radius:15px;opacity:0.28;border:4px solid #000;box-shadow:0 6px 0 #000;transition:transform 0.12s, opacity 0.12s, filter 0.12s`;
+          const pulse = (manual = false) => {
             item.style.opacity = "1";
             item.style.transform = "scale(0.94)";
             item.style.filter = "brightness(1.25)";
             ctx.scope.setTimeout(() => {
-              item.style.opacity = listening ? "0.82" : "0.3";
+              item.style.opacity = listening ? "0.82" : "0.28";
               item.style.transform = "scale(1)";
               item.style.filter = "brightness(1)";
-            }, 140);
+            }, manual ? 160 : 260);
           };
           item.onclick = () => {
             if (!listening) return;
             ctx.note(400 + i * 200, 150, 0.5);
-            pulse();
+            pulse(true);
             if (i === sequence[step]) {
               step += 1;
               status.textContent = `${step}/${sequence.length}`;
               if (step === sequence.length) done({ won: true });
             } else {
-              status.textContent = "NOPE";
+              status.textContent = "TRY AGAIN";
               done({ won: false });
             }
           };
           buttons.push(item);
           ctx.area.appendChild(item);
         }
-        let flash = 0;
-        const show = ctx.scope.setInterval(() => {
-          if (flash >= sequence.length) {
-            clearInterval(show);
-            listening = true;
-            status.textContent = "REPEAT";
-            buttons.forEach((button) => {
-              button.style.opacity = "0.82";
-            });
+        const showStep = (index) => {
+          if (index >= sequence.length) {
+            ctx.scope.setTimeout(() => {
+              listening = true;
+              status.textContent = "REPEAT";
+              buttons.forEach((button) => {
+                button.style.opacity = "0.82";
+              });
+            }, 340);
             return;
           }
-          const btn = buttons[sequence[flash]];
+          const colorIndex = sequence[index];
+          pulseButton(colorIndex);
+          ctx.scope.setTimeout(() => showStep(index + 1), 650);
+        };
+        const pulseButton = (buttonIndex) => {
+          const btn = buttons[buttonIndex];
           btn.style.opacity = "1";
           btn.style.transform = "scale(0.94)";
           btn.style.filter = "brightness(1.25)";
-          ctx.note(400 + sequence[flash] * 200, 150, 0.5);
+          ctx.note(400 + buttonIndex * 200, 170, 0.5);
           ctx.scope.setTimeout(() => {
-            btn.style.opacity = "0.3";
+            btn.style.opacity = "0.28";
             btn.style.transform = "scale(1)";
             btn.style.filter = "brightness(1)";
-          }, 200);
-          flash += 1;
-        }, 450);
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+          }, 300);
+        };
+        ctx.scope.setTimeout(() => showStep(0), 350);
+        ctx.scope.setTimeout(() => done({ won: false }), 15000);
       });
     },
   };
+
 
   games.rhythm = {
     id: "rhythm",
@@ -1830,23 +1912,25 @@ function createGames() {
   games.mug = {
     id: "mug",
     prompt: "GRAB!",
+    hint: "TAP IN THE GLOW",
+    duration: 15000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div style="position:absolute;left:0;top:70%;width:100%;height:10px;background:#743;border-top:4px solid #000"></div>' +
-          '<div style="position:absolute;right:10%;top:63%;width:15cqw;height:5px;background:#0E6"></div>' +
-          '<div id="mug" style="position:absolute;left:-20%;top:50%;font-size:15cqw">🍺</div>';
+          '<div style="position:absolute;left:0;top:70%;width:100%;height:10px;background:#743;border-top:4px solid #000;box-shadow:0 -8px 18px rgba(0,0,0,0.12)"></div>' +
+          '<div style="position:absolute;right:7%;top:59%;width:31cqw;height:15cqw;border-radius:999px;background:radial-gradient(circle,rgba(0,230,118,0.45) 0%,rgba(0,230,118,0.2) 58%,transparent 72%);border:2px solid rgba(255,255,255,0.45);display:flex;align-items:center;justify-content:center;color:#fff;font-size:4.5cqw;font-weight:900;text-shadow:0 2px 0 rgba(0,0,0,0.25)">TAP ZONE</div>' +
+          '<div id="mug" style="position:absolute;left:-20%;top:50%;font-size:15cqw;filter:drop-shadow(0 5px 0 rgba(0,0,0,0.25))">☕</div>';
         const mug = $("#mug");
         let x = -20;
         const move = ctx.scope.setInterval(() => {
-          x += 3 + ctx.round * 0.1;
+          x += 1.62 + ctx.round * 0.035;
           mug.style.left = x + "%";
-          if (x > 110) done({ won: false });
+          if (x > 112) done({ won: false });
         }, 20);
         ctx.area.onpointerdown = () => {
           clearInterval(move);
-          done({ won: x > 72 && x < 88 });
+          done({ won: x > 62 && x < 96 });
         };
         ctx.scope.addCleanup(() => {
           ctx.area.onpointerdown = null;
@@ -1854,6 +1938,7 @@ function createGames() {
       });
     },
   };
+
 
   games.spy = {
     id: "spy",
@@ -2011,47 +2096,91 @@ function createGames() {
   games.sort = {
     id: "sort",
     prompt: "SORT!",
+    hint: "MATCH EVERY BIN",
+    duration: 22000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div style="position:absolute;left:8%;bottom:8%;width:24%;height:24%;background:#ffe0e0;border:4px solid #000;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:10cqw">🍎</div>' +
-          '<div style="position:absolute;left:38%;bottom:8%;width:24%;height:24%;background:#fff6cc;border:4px solid #000;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:10cqw">🍌</div>' +
-          '<div style="position:absolute;left:68%;bottom:8%;width:24%;height:24%;background:#efe0ff;border:4px solid #000;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:10cqw">🍇</div>';
+          '<div id="sortScore" style="position:absolute;top:7%;left:0;right:0;text-align:center;color:#fff;font-size:6.5cqw;-webkit-text-stroke:2px #000;text-shadow:0 4px 0 #000;z-index:3">0 / 6</div>';
+        const score = $("#sortScore");
         const bins = [
-          { emoji: "🍎", left: 8, right: 32 },
-          { emoji: "🍌", left: 38, right: 62 },
-          { emoji: "🍇", left: 68, right: 92 },
+          { type: "fruit", label: "FRUIT", emoji: "🍎", left: 5, color: "#ffe0e0" },
+          { type: "snack", label: "SNACK", emoji: "🧁", left: 38, color: "#fff6cc" },
+          { type: "toy", label: "TOY", emoji: "🧸", left: 71, color: "#efe0ff" },
         ];
-        const items = ["🍎", "🍌", "🍇"];
+        bins.forEach((bin) => {
+          const node = document.createElement("div");
+          node.dataset.bin = bin.type;
+          node.style.cssText =
+            `position:absolute;left:${bin.left}%;bottom:7%;width:24%;height:25%;background:${bin.color};` +
+            "border:4px solid #000;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+            "font-size:8cqw;color:#1b1f35;font-weight:900;box-shadow:0 9px 0 rgba(0,0,0,0.18);";
+          node.innerHTML = `<span style="font-size:9cqw">${bin.emoji}</span><span style="font-size:3.8cqw">${bin.label}</span>`;
+          ctx.area.appendChild(node);
+        });
+        const itemDefs = [
+          { emoji: "🍎", type: "fruit" },
+          { emoji: "🍇", type: "fruit" },
+          { emoji: "🧁", type: "snack" },
+          { emoji: "🍪", type: "snack" },
+          { emoji: "🧸", type: "toy" },
+          { emoji: "🪀", type: "toy" },
+        ].sort(() => Math.random() - 0.5);
         let doneCount = 0;
-        items.forEach((emoji, index) => {
+        itemDefs.forEach((def, index) => {
           const item = document.createElement("div");
-          item.textContent = emoji;
+          item.textContent = def.emoji;
+          item.dataset.type = def.type;
+          const home = {
+            left: 12 + (index % 3) * 28,
+            top: 19 + Math.floor(index / 3) * 17,
+          };
           item.style.cssText =
-            `position:absolute;left:${18 + index * 24}%;top:18%;font-size:12cqw;touch-action:none;cursor:pointer`;
+            `position:absolute;left:${home.left}%;top:${home.top}%;font-size:11cqw;touch-action:none;cursor:pointer;` +
+            "filter:drop-shadow(0 5px 0 rgba(0,0,0,0.24));transition:transform 0.14s ease, filter 0.14s ease;";
           let dragging = false;
-          const move = (event) => {
-            if (!dragging) return;
+          const setPosition = (event) => {
             const rect = ctx.area.getBoundingClientRect();
             item.style.left = ((event.clientX - rect.left) / rect.width) * 100 + "%";
             item.style.top = ((event.clientY - rect.top) / rect.height) * 100 + "%";
           };
+          const snapHome = () => {
+            item.style.left = home.left + "%";
+            item.style.top = home.top + "%";
+            item.style.transform = "translateY(-6px) scale(1.05)";
+            ctx.scope.setTimeout(() => {
+              item.style.transform = "translateY(0) scale(1)";
+            }, 140);
+          };
+          const move = (event) => {
+            if (!dragging) return;
+            setPosition(event);
+          };
           const up = (event) => {
             if (!dragging) return;
             dragging = false;
-            const rect = ctx.area.getBoundingClientRect();
-            const x = ((event.clientX - rect.left) / rect.width) * 100;
-            const y = ((event.clientY - rect.top) / rect.height) * 100;
-            const match = bins.find((bin) => bin.emoji === emoji && x > bin.left && x < bin.right && y > 66);
-            if (match) {
+            item.style.zIndex = "2";
+            item.style.filter = "drop-shadow(0 5px 0 rgba(0,0,0,0.24))";
+            const target = document.elementFromPoint(event.clientX, event.clientY);
+            const bin = target?.closest?.("[data-bin]");
+            if (bin?.dataset.bin === def.type) {
               item.remove();
               doneCount += 1;
-              if (doneCount === 3) done({ won: true });
+              score.textContent = `${doneCount} / ${itemDefs.length}`;
+              ctx.click();
+              if (doneCount === itemDefs.length) done({ won: true });
+              return;
             }
+            ctx.note(240, 80, 0.25, "sine");
+            snapHome();
           };
-          item.onpointerdown = () => {
+          item.onpointerdown = (event) => {
+            event.preventDefault();
             dragging = true;
+            item.style.zIndex = "9";
+            item.style.filter = "drop-shadow(0 9px 0 rgba(0,0,0,0.28)) brightness(1.08)";
+            setPosition(event);
           };
           window.addEventListener("pointermove", move);
           window.addEventListener("pointerup", up);
@@ -2062,44 +2191,67 @@ function createGames() {
           });
           ctx.area.appendChild(item);
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 16000);
+        ctx.scope.setTimeout(() => done({ won: doneCount === itemDefs.length }), 22000);
       });
     },
   };
 
+
   games.zap = {
     id: "zap",
     prompt: "CHEESE!",
-    hint: "DRAG 🐭 TO 🧀. AVOID 🐱",
+    hint: "GUIDE MOUSE TO CHEESE",
+    duration: 15000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div style="position:absolute;left:0;right:0;top:6%;text-align:center;color:#fff;font-size:6cqw;' +
-          '-webkit-text-stroke:2px #000;text-shadow:0 4px 0 #000;z-index:2">DRAG THE MOUSE TO THE CHEESE</div>' +
+          '<div style="position:absolute;left:8%;right:8%;top:6%;text-align:center;color:#1b1f35;font-size:4.4cqw;font-weight:900;' +
+          'background:rgba(255,255,255,0.62);border:1px solid rgba(255,255,255,0.82);border-radius:999px;padding:8px 10px;box-shadow:0 10px 24px rgba(37,55,107,0.15);z-index:2">Guide the mouse to the cheese</div>' +
           '<canvas id="zapCanvas" width="320" height="420" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none"></canvas>';
         const canvas = $("#zapCanvas");
         const draw = canvas.getContext("2d");
-        const start = { x: 50, y: 80 };
-        const end = { x: 270, y: 340 };
+        const start = { x: 54, y: 100 };
+        const end = { x: 266, y: 340 };
         const blockers = [
-          { x: 130, y: 170, r: 28, emoji: "🐱" },
-          { x: 210, y: 250, r: 32, emoji: "🐱" },
-          { x: 110, y: 290, r: 28, emoji: "🐱" },
+          { x: 142, y: 178, r: 22, emoji: "🐱" },
+          { x: 218, y: 254, r: 24, emoji: "🐱" },
+          { x: 112, y: 300, r: 22, emoji: "🐱" },
         ];
         const render = (path = []) => {
           draw.clearRect(0, 0, canvas.width, canvas.height);
+          draw.fillStyle = "rgba(255,255,255,0.26)";
+          draw.fillRect(24, 62, 272, 322);
+          draw.strokeStyle = "rgba(255,255,255,0.62)";
+          draw.lineWidth = 18;
+          draw.lineCap = "round";
+          draw.lineJoin = "round";
+          draw.beginPath();
+          draw.moveTo(start.x, start.y);
+          draw.bezierCurveTo(96, 130, 92, 232, 152, 232);
+          draw.bezierCurveTo(216, 232, 210, 322, end.x, end.y);
+          draw.stroke();
+          draw.strokeStyle = "rgba(35,47,95,0.12)";
+          draw.lineWidth = 4;
+          draw.stroke();
           draw.font = "38px system-ui";
           draw.textAlign = "center";
           draw.textBaseline = "middle";
           draw.fillText("🐭", start.x, start.y);
           draw.fillText("🧀", end.x, end.y);
           blockers.forEach((blocker) => {
+            draw.fillStyle = "rgba(255,80,112,0.18)";
+            draw.beginPath();
+            draw.arc(blocker.x, blocker.y, blocker.r + 13, 0, Math.PI * 2);
+            draw.fill();
+            draw.fillStyle = "#000";
             draw.fillText(blocker.emoji, blocker.x, blocker.y);
           });
           if (path.length) {
             draw.strokeStyle = "#fff7a8";
-            draw.lineWidth = 12;
+            draw.lineWidth = 11;
+            draw.lineCap = "round";
+            draw.lineJoin = "round";
             draw.beginPath();
             draw.moveTo(path[0].x, path[0].y);
             path.slice(1).forEach((point) => draw.lineTo(point.x, point.y));
@@ -2118,7 +2270,7 @@ function createGames() {
         render();
         canvas.onpointerdown = (event) => {
           const point = toCanvas(event);
-          if (Math.hypot(point.x - start.x, point.y - start.y) < 30) {
+          if (Math.hypot(point.x - start.x, point.y - start.y) < 42) {
             started = true;
             path = [point];
             ctx.note(720, 80, 0.5, "sine");
@@ -2129,11 +2281,11 @@ function createGames() {
           const point = toCanvas(event);
           path.push(point);
           render(path);
-          if (blockers.some((blocker) => Math.hypot(point.x - blocker.x, point.y - blocker.y) < blocker.r + 8)) {
+          if (blockers.some((blocker) => Math.hypot(point.x - blocker.x, point.y - blocker.y) < blocker.r + 3)) {
             done({ won: false });
             return;
           }
-          if (Math.hypot(point.x - end.x, point.y - end.y) < 30) {
+          if (Math.hypot(point.x - end.x, point.y - end.y) < 42) {
             ctx.note(980, 120, 0.5, "triangle");
             done({ won: true });
           }
@@ -2146,50 +2298,77 @@ function createGames() {
           canvas.onpointermove = null;
           canvas.onpointerup = null;
         });
-        ctx.scope.setTimeout(() => done({ won: false }), 12000);
+        ctx.scope.setTimeout(() => done({ won: false }), 15000);
       });
     },
   };
 
+
   games.bounce = {
     id: "bounce",
-    prompt: "BOUNCE!",
+    prompt: "PONG!",
+    hint: "RETURN 5 BALLS",
+    duration: 16000,
     start(ctx) {
       return new Promise((resolve) => {
         const done = finishOnce(ctx.scope, resolve);
         ctx.area.innerHTML =
-          '<div style="position:absolute;left:10%;right:10%;bottom:20%;height:6px;background:#f33"></div>' +
-          '<div id="bounceBall" style="position:absolute;left:46%;bottom:45%;font-size:12cqw">🏀</div>' +
-          '<div id="bounceCount" style="position:absolute;top:10%;width:100%;text-align:center;font-size:10cqw">0</div>';
-        const ball = $("#bounceBall");
-        const count = $("#bounceCount");
-        let height = 60;
-        let velocity = 0;
-        let beats = 0;
-        let gravity = 0.18;
-        let bounceForce = 3.8;
-        const loop = ctx.scope.setInterval(() => {
-          height += velocity;
-          velocity -= gravity;
-          if (height <= 20) done({ won: false });
-          ball.style.bottom = height + "%";
-        }, 30);
-        ctx.area.onpointerdown = () => {
-          velocity = bounceForce;
-          beats += 1;
-          gravity += 0.05;
-          bounceForce += 0.2;
-          ctx.note(600 + beats * 40, 80, 0.5, "sine");
-          count.textContent = `${beats}`;
+          '<div id="pongScore" style="position:absolute;top:8%;left:0;right:0;text-align:center;font-size:8cqw;color:#fff;-webkit-text-stroke:2px #000;text-shadow:0 4px 0 #000">0 / 5</div>' +
+          '<div style="position:absolute;right:5%;top:16%;bottom:10%;width:8px;background:rgba(255,255,255,0.62);border-radius:999px"></div>' +
+          '<div id="pongPaddle" style="position:absolute;left:7%;top:44%;width:5cqw;height:26%;background:var(--b);border:4px solid #000;border-radius:999px;box-shadow:0 6px 0 rgba(0,0,0,0.2)"></div>' +
+          '<div id="pongBall" style="position:absolute;left:48%;top:48%;font-size:9cqw;filter:drop-shadow(0 4px 0 rgba(0,0,0,0.25))">🏀</div>';
+        const scoreEl = $("#pongScore");
+        const paddle = $("#pongPaddle");
+        const ball = $("#pongBall");
+        let paddleY = 44;
+        let ballX = 48;
+        let ballY = 48;
+        let vx = -1.45;
+        let vy = 1.0;
+        let returns = 0;
+        const movePaddle = (event) => {
+          const rect = ctx.area.getBoundingClientRect();
+          const point = event.touches ? event.touches[0] : event;
+          paddleY = Math.max(14, Math.min(72, ((point.clientY - rect.top) / rect.height) * 100 - 13));
+          paddle.style.top = paddleY + "%";
         };
+        ctx.area.onpointermove = movePaddle;
+        ctx.area.onpointerdown = movePaddle;
+        const loop = ctx.scope.setInterval(() => {
+          ballX += vx;
+          ballY += vy;
+          if (ballY < 17 || ballY > 86) {
+            vy *= -1;
+            ballY = Math.max(17, Math.min(86, ballY));
+          }
+          if (ballX > 86) {
+            vx *= -1;
+            ballX = 86;
+          }
+          const paddleTop = paddleY;
+          const paddleBottom = paddleY + 26;
+          if (ballX < 13 && ballX > 6 && ballY > paddleTop - 4 && ballY < paddleBottom + 4 && vx < 0) {
+            vx = Math.min(2.5, Math.abs(vx) + 0.12);
+            vy += (ballY - (paddleTop + 13)) * 0.035;
+            returns += 1;
+            scoreEl.textContent = `${returns} / 5`;
+            ctx.note(600 + returns * 55, 80, 0.5, "sine");
+            if (returns >= 5) done({ won: true });
+          }
+          if (ballX < -6) done({ won: false });
+          ball.style.left = ballX + "%";
+          ball.style.top = ballY + "%";
+        }, 30);
         ctx.scope.addCleanup(() => {
           clearInterval(loop);
+          ctx.area.onpointermove = null;
           ctx.area.onpointerdown = null;
         });
-        ctx.scope.setTimeout(() => done({ won: true }), 12000);
+        ctx.scope.setTimeout(() => done({ won: returns >= 5 }), 16000);
       });
     },
   };
+
 
   games.decoy = {
     id: "decoy",
@@ -2460,7 +2639,7 @@ class MatchController {
     else this.oppScore += 1;
 
     updateHud("versus", this.currentHudState());
-    this.showRoundVerdict(localWins ? "WIN!" : "LOSE", localWins);
+    this.showRoundVerdict(localWins ? "WIN!" : "SO CLOSE", localWins);
 
     window.setTimeout(() => {
       if (this.ended) return;
@@ -2482,7 +2661,7 @@ class MatchController {
       audio.lose();
     }
     updateHud("solo", this.currentHudState());
-    this.showRoundVerdict(result.won ? "WIN!" : "FAIL!", result.won);
+    this.showRoundVerdict(result.won ? "WIN!" : "TRY AGAIN", result.won);
     window.setTimeout(() => {
       if (this.oppScore <= 0) {
         this.endSolo();
@@ -2532,7 +2711,7 @@ class MatchController {
       ? (this.times.reduce((sum, value) => sum + value, 0) / this.times.length).toFixed(2)
       : "--";
     refs.gameArea.innerHTML =
-      `<div class="instr" style="font-size:clamp(40px,16cqw,90px)">GAME OVER<br>` +
+      `<div class="instr" style="font-size:clamp(40px,16cqw,90px)">GOOD RUN<br>` +
       `<span style="font-size:clamp(20px,8cqw,40px)">WINS: ${this.myScore}<br>AVG TIME: ${average}s</span></div>`;
     this.renderPostMatchActions({ solo: true });
   }
@@ -2551,7 +2730,7 @@ class MatchController {
     }
     const victory = finalMy > finalOpp;
     refs.gameArea.innerHTML =
-      `<div class="instr" style="font-size:clamp(40px,16cqw,90px)">${victory ? "VICTORY" : "DEFEAT"}<br>` +
+      `<div class="instr" style="font-size:clamp(40px,16cqw,90px)">${victory ? "VICTORY" : "GOOD GAME"}<br>` +
       `<span style="font-size:clamp(30px,10cqw,60px)">${finalMy}-${finalOpp}</span></div>`;
     if (victory) {
       const show = window.setInterval(() => {
