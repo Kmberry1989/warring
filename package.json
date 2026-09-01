@@ -7,5 +7,8 @@
     "dev": "wrangler dev --local --port 8787",
     "deploy": "wrangler deploy",
     "whoami": "wrangler whoami"
+  },
+  "dependencies": {
+    "archiver": "^8.0.0"
   }
 }
