@@ -369,26 +369,32 @@ class SignalingClient {
     return response.json();
   }
 
-  async createRoom(offer) {
+  async createRoom(offer, options = {}) {
     return this.request("/rooms", {
       method: "POST",
       body: JSON.stringify({ offer }),
+      ...options,
     });
   }
 
-  async getOffer(roomId) {
-    return this.request(`/rooms/${roomId}`);
+  async getOffer(roomId, options = {}) {
+    return this.request(`/rooms/${roomId}`, options);
   }
 
-  async submitAnswer(roomId, answer) {
+  async submitAnswer(roomId, answer, options = {}) {
     return this.request(`/rooms/${roomId}/answer`, {
       method: "POST",
       body: JSON.stringify({ answer }),
+      ...options,
     });
   }
 
-  async waitForAnswer(roomId) {
-    return this.request(`/rooms/${roomId}/answer`);
+  async waitForAnswer(roomId, options = {}) {
+    return this.request(`/rooms/${roomId}/answer`, options);
+  }
+
+  async cancelRoom(roomId) {
+    return this.request(`/rooms/${roomId}`, { method: "DELETE" });
   }
 }
 
@@ -399,35 +405,78 @@ class PeerTransport {
     this.onopen = null;
     this.onmessage = null;
     this.onclose = null;
+    this.setup = null;
   }
 
   async host({ signaling, roomReady, status }) {
-    this.cleanup();
-    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    this.dc = this.pc.createDataChannel("warring");
-    this.bindChannel(this.dc);
-    status("creating room");
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
-    await this.waitForIce();
-    const created = await signaling.createRoom(this.pc.localDescription.toJSON());
-    roomReady(created);
-    status("waiting for player");
-    await this.pollForAnswer(signaling, created.roomId, status);
+    const setup = this.beginSetup("host", signaling);
+    try {
+      this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      this.dc = this.pc.createDataChannel("warring");
+      this.bindChannel(this.dc);
+      status("creating room");
+      const offer = await this.pc.createOffer();
+      this.assertSetupActive(setup);
+      await this.pc.setLocalDescription(offer);
+      await this.waitForIce(setup);
+      const created = await signaling.createRoom(this.pc.localDescription.toJSON(), {
+        signal: setup.controller.signal,
+      });
+      setup.roomId = created.roomId;
+      this.assertSetupActive(setup);
+      roomReady(created);
+      status("waiting for player");
+      await this.pollForAnswer(signaling, created.roomId, status, setup);
+    } catch (error) {
+      if (this.isSetupCancelled(setup, error)) throw new Error("operation_cancelled");
+      this.cancelSetup();
+      throw error;
+    }
   }
 
   async join({ signaling, roomId, status }) {
-    this.cleanup();
-    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    this.pc.ondatachannel = (event) => this.bindChannel(event.channel);
-    status("joining");
-    const payload = await signaling.getOffer(roomId);
-    await this.pc.setRemoteDescription(payload.offer);
-    const answer = await this.pc.createAnswer();
-    await this.pc.setLocalDescription(answer);
-    await this.waitForIce();
-    await signaling.submitAnswer(roomId, this.pc.localDescription.toJSON());
-    status("connecting");
+    const setup = this.beginSetup("guest", signaling);
+    try {
+      this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      this.pc.ondatachannel = (event) => this.bindChannel(event.channel);
+      status("joining");
+      const payload = await signaling.getOffer(roomId, { signal: setup.controller.signal });
+      this.assertSetupActive(setup);
+      await this.pc.setRemoteDescription(payload.offer);
+      const answer = await this.pc.createAnswer();
+      this.assertSetupActive(setup);
+      await this.pc.setLocalDescription(answer);
+      await this.waitForIce(setup);
+      await signaling.submitAnswer(roomId, this.pc.localDescription.toJSON(), {
+        signal: setup.controller.signal,
+      });
+      this.assertSetupActive(setup);
+      status("connecting");
+    } catch (error) {
+      if (this.isSetupCancelled(setup, error)) throw new Error("operation_cancelled");
+      this.cancelSetup();
+      throw error;
+    }
+  }
+
+  beginSetup(role, signaling) {
+    this.cancelSetup();
+    const setup = {
+      role,
+      signaling,
+      roomId: null,
+      controller: new AbortController(),
+    };
+    this.setup = setup;
+    return setup;
+  }
+
+  isSetupCancelled(setup, error = null) {
+    return setup.controller.signal.aborted || this.setup !== setup || error?.name === "AbortError";
+  }
+
+  assertSetupActive(setup) {
+    if (this.isSetupCancelled(setup)) throw new Error("operation_cancelled");
   }
 
   bindChannel(channel) {
@@ -444,17 +493,22 @@ class PeerTransport {
     };
   }
 
-  async pollForAnswer(signaling, roomId, status) {
+  async pollForAnswer(signaling, roomId, status, setup) {
     while (true) {
-      await new Promise((resolve) => setTimeout(resolve, HOST_POLL_MS));
+      await this.wait(HOST_POLL_MS, setup.controller.signal);
+      this.assertSetupActive(setup);
       try {
-        const payload = await signaling.waitForAnswer(roomId);
+        const payload = await signaling.waitForAnswer(roomId, {
+          signal: setup.controller.signal,
+        });
         if (payload?.answer) {
+          this.assertSetupActive(setup);
           status("connecting");
           await this.pc.setRemoteDescription(payload.answer);
           return;
         }
       } catch (error) {
+        if (this.isSetupCancelled(setup, error)) throw new Error("operation_cancelled");
         if (error.message === "waiting_for_player") {
           status("waiting for player");
           continue;
@@ -464,16 +518,43 @@ class PeerTransport {
     }
   }
 
-  async waitForIce() {
-    if (!this.pc || this.pc.iceGatheringState === "complete") return;
-    await new Promise((resolve) => {
-      const handler = () => {
-        if (this.pc.iceGatheringState === "complete") {
-          this.pc.removeEventListener("icegatheringstatechange", handler);
-          resolve();
-        }
+  wait(ms, signal) {
+    return new Promise((resolve, reject) => {
+      let timer = window.setTimeout(() => {
+        signal.removeEventListener("abort", cancel);
+        resolve();
+      }, ms);
+      const cancel = () => {
+        window.clearTimeout(timer);
+        timer = 0;
+        signal.removeEventListener("abort", cancel);
+        reject(new Error("operation_cancelled"));
       };
-      this.pc.addEventListener("icegatheringstatechange", handler);
+      signal.addEventListener("abort", cancel, { once: true });
+      if (signal.aborted) cancel();
+    });
+  }
+
+  async waitForIce(setup) {
+    const pc = this.pc;
+    if (!pc || pc.iceGatheringState === "complete") return;
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        pc.removeEventListener("icegatheringstatechange", handler);
+        setup.controller.signal.removeEventListener("abort", cancel);
+        if (error) reject(error);
+        else resolve();
+      };
+      const handler = () => {
+        if (pc.iceGatheringState === "complete") finish();
+      };
+      const cancel = () => finish(new Error("operation_cancelled"));
+      pc.addEventListener("icegatheringstatechange", handler);
+      setup.controller.signal.addEventListener("abort", cancel, { once: true });
+      if (setup.controller.signal.aborted) cancel();
     });
   }
 
@@ -483,7 +564,27 @@ class PeerTransport {
     }
   }
 
+  cancelSetup() {
+    const setup = this.setup;
+    this.setup = null;
+    if (setup) {
+      setup.controller.abort();
+      if (setup.role === "host" && setup.roomId) {
+        void setup.signaling.cancelRoom(setup.roomId).catch(() => {});
+      }
+    }
+    this.closePeer();
+  }
+
   cleanup() {
+    if (this.setup) {
+      this.setup.controller.abort();
+      this.setup = null;
+    }
+    this.closePeer();
+  }
+
+  closePeer() {
     if (this.dc) {
       this.dc.onopen = null;
       this.dc.onmessage = null;
@@ -2906,14 +3007,19 @@ refs.joinBtn.onclick = () => {
   refs.roomCodeInput.focus();
 };
 
-refs.hostResetBtn.onclick = () => {
-  setLobbyMode(null);
+function cancelRoomSetup() {
+  transport.cancelSetup();
+  resetLobbyUi();
+  showScreen("lobby");
   setStatus("");
+}
+
+refs.hostResetBtn.onclick = () => {
+  cancelRoomSetup();
 };
 
 refs.joinResetBtn.onclick = () => {
-  setLobbyMode(null);
-  setStatus("");
+  cancelRoomSetup();
 };
 
 refs.copyCodeBtn.onclick = () => copyText(appState.roomCode, "Room code copied.");
@@ -2964,16 +3070,18 @@ refs.createRoomBtn.onclick = async () => {
       },
     });
   } catch (error) {
-    setStatus(
-      error.message === "room_full" ? "Room full." :
-      error.message === "room_expired" ? "Expired room." :
-      error.message === "room_not_found" ? "Invalid code." :
-      error.message === "signaling_missing" ? "No signaling backend at /api. Run with Wrangler dev/deploy." :
-      error.message === "signaling_unreachable" ? "Signaling backend unreachable." :
-      error.message === "signaling_failed" ? "Signaling backend failed." :
-      "Unable to create room.",
-      "error"
-    );
+    if (error.message !== "operation_cancelled") {
+      setStatus(
+        error.message === "room_full" ? "Room full." :
+        error.message === "room_expired" ? "Expired room." :
+        error.message === "room_not_found" ? "Invalid code." :
+        error.message === "signaling_missing" ? "No signaling backend at /api. Run with Wrangler dev/deploy." :
+        error.message === "signaling_unreachable" ? "Signaling backend unreachable." :
+        error.message === "signaling_failed" ? "Signaling backend failed." :
+        "Unable to create room.",
+        "error"
+      );
+    }
   } finally {
     refs.createRoomBtn.disabled = false;
   }
@@ -2996,16 +3104,18 @@ refs.joinRoomBtn.onclick = async () => {
       status: (state) => setStatus(state, state === "joining" ? "warn" : "success"),
     });
   } catch (error) {
-    setStatus(
-      error.message === "room_not_found" ? "Invalid code." :
-      error.message === "room_expired" ? "Expired room." :
-      error.message === "room_full" ? "Room full." :
-      error.message === "signaling_missing" ? "No signaling backend at /api. Run with Wrangler dev/deploy." :
-      error.message === "signaling_unreachable" ? "Signaling backend unreachable." :
-      error.message === "signaling_failed" ? "Signaling backend failed." :
-      "Unable to join room.",
-      "error"
-    );
+    if (error.message !== "operation_cancelled") {
+      setStatus(
+        error.message === "room_not_found" ? "Invalid code." :
+        error.message === "room_expired" ? "Expired room." :
+        error.message === "room_full" ? "Room full." :
+        error.message === "signaling_missing" ? "No signaling backend at /api. Run with Wrangler dev/deploy." :
+        error.message === "signaling_unreachable" ? "Signaling backend unreachable." :
+        error.message === "signaling_failed" ? "Signaling backend failed." :
+        "Unable to join room.",
+        "error"
+      );
+    }
   } finally {
     refs.joinRoomBtn.disabled = false;
   }

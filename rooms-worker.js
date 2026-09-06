@@ -7,7 +7,7 @@ function json(data, init = {}) {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
       "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-methods": "DELETE,GET,POST,OPTIONS",
       "access-control-allow-headers": "content-type",
       ...(init.headers || {}),
     },
@@ -105,6 +105,10 @@ export default {
       return stub.fetch("https://room.internal/answer");
     }
 
+    if (request.method === "DELETE" && url.pathname === `/api/rooms/${roomId}`) {
+      return stub.fetch("https://room.internal/cancel", { method: "DELETE" });
+    }
+
     return json({ error: "not_found" }, { status: 404 });
   },
 };
@@ -163,6 +167,11 @@ export class RoomState {
         return json({ error: "waiting_for_player" }, { status: 404 });
       }
       return json({ answer: room.answer, expiresAt: room.expiresAt });
+    }
+
+    if (request.method === "DELETE" && url.pathname === "/cancel") {
+      await this.state.storage.delete("room");
+      return json({ ok: true });
     }
 
     return json({ error: "not_found" }, { status: 404 });
