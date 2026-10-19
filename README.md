@@ -12,17 +12,18 @@ Touch-first local party game built as a single-screen web app with WebRTC multip
 
 ## How It Works
 
-- Frontend: [index.html](/Users/kyleberry/warring/index.html) + [app.js](/Users/kyleberry/warring/app.js)
-- Signaling backend: [rooms-worker.js](/Users/kyleberry/warring/rooms-worker.js)
+- Frontend: [`index.html`](index.html) + [`app.js`](app.js)
+- Signaling backend: [`rooms-worker.js`](rooms-worker.js)
 - Transport: WebRTC peer-to-peer gameplay after room setup
 - Room setup: short room code and join link via `/api/rooms`
 
 ## Local Development
 
-Run the full app with the signaling backend:
+Install dependencies, then run the full app with the signaling backend:
 
 ```bash
-npx wrangler dev --local --port 8787
+npm install
+npm run dev
 ```
 
 Then open:
@@ -35,12 +36,12 @@ Do not use `python -m http.server` for multiplayer testing. That only serves sta
 
 ## Files
 
-- [index.html](/Users/kyleberry/warring/index.html): shell, layout, styles, lobby, HUD
-- [app.js](/Users/kyleberry/warring/app.js): runtime, game registry, multiplayer, UI state
-- [rooms-worker.js](/Users/kyleberry/warring/rooms-worker.js): Cloudflare Worker + Durable Object signaling
-- [wrangler.toml](/Users/kyleberry/warring/wrangler.toml): local/prod worker config
-- [MICROGAMES.md](/Users/kyleberry/warring/MICROGAMES.md): every game explained
-- [DEPLOYMENT.md](/Users/kyleberry/warring/DEPLOYMENT.md): hosting options and requirements
+- [`index.html`](index.html): shell, layout, styles, lobby, HUD
+- [`app.js`](app.js): runtime, game registry, multiplayer, UI state
+- [`rooms-worker.js`](rooms-worker.js): Cloudflare Worker + Durable Object signaling
+- [`wrangler.toml`](wrangler.toml): local/prod worker config
+- [`MICROGAMES.md`](MICROGAMES.md): every game explained
+- [`DEPLOYMENT.md`](DEPLOYMENT.md): hosting options and requirements
 
 ## Multiplayer Hosting Summary
 
