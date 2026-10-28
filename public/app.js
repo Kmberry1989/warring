@@ -9,8 +9,9 @@ const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 const TOTAL_ROUNDS = 9;
 const SOLO_LIVES = 10;
 const HOST_POLL_MS = 1000;
-const ROUND_PREP_MS = 3000;
-const ROUND_RESULT_MS = 2200;
+const CONNECTION_TIMEOUT_MS = 15000;
+const ROUND_PREP_MS = 1800;
+const ROUND_RESULT_MS = 1400;
 const DEFAULT_GAME_MS = 12000;
 const LONG_GAME_MS = 16000;
 const REACTION_SET = ["🔥", "😂", "👏", "😱"];
@@ -41,6 +42,8 @@ const refs = {
   roomCodeDisplay: $("#roomCodeDisplay"),
   joinLinkDisplay: $("#joinLinkDisplay"),
   roomCodeInput: $("#roomCodeInput"),
+  bestScore: $("#bestScore"),
+  exitGameBtn: $("#exitGameBtn"),
   stat: $("#stat"),
   hudLeft: $("#hud-left"),
   hudMid: $("#hud-mid"),
@@ -56,7 +59,29 @@ const appState = {
   joinUrl: null,
   pendingRole: null,
   chatHistory: [],
+  bestSolo: readBestScore(),
 };
+
+function readBestScore() {
+  try {
+    return Math.max(0, Number.parseInt(localStorage.getItem("warring:solo-best") || "0", 10) || 0);
+  } catch (_error) {
+    return 0;
+  }
+}
+
+function saveBestScore(score) {
+  appState.bestSolo = Math.max(appState.bestSolo, score);
+  try {
+    localStorage.setItem("warring:solo-best", String(appState.bestSolo));
+  } catch (_error) {
+    // Persistence is optional; the current session still keeps the best score.
+  }
+}
+
+function updateBestScoreDisplay(gameCount = 35) {
+  refs.bestScore.textContent = `BEST ${appState.bestSolo} · ${gameCount} MICROGAMES`;
+}
 
 const audio = (() => {
   let actx;
@@ -270,7 +295,10 @@ async function copyText(text, successMessage) {
 function appendChatMessage(sender, text, me = false, kind = "") {
   const row = document.createElement("div");
   row.className = `chat-msg${me ? " me" : ""}${kind ? ` ${kind}` : ""}`;
-  row.innerHTML = `<span class="chat-name">${sender}</span>${text}`;
+  const name = document.createElement("span");
+  name.className = "chat-name";
+  name.textContent = sender;
+  row.append(name, document.createTextNode(text));
   refs.chatLog.appendChild(row);
   refs.chatLog.scrollTop = refs.chatLog.scrollHeight;
 }
@@ -427,6 +455,7 @@ class PeerTransport {
       roomReady(created);
       status("waiting for player");
       await this.pollForAnswer(signaling, created.roomId, status, setup);
+      await this.waitForConnection(setup);
     } catch (error) {
       if (this.isSetupCancelled(setup, error)) throw new Error("operation_cancelled");
       this.cancelSetup();
@@ -452,6 +481,7 @@ class PeerTransport {
       });
       this.assertSetupActive(setup);
       status("connecting");
+      await this.waitForConnection(setup);
     } catch (error) {
       if (this.isSetupCancelled(setup, error)) throw new Error("operation_cancelled");
       this.cancelSetup();
@@ -556,6 +586,42 @@ class PeerTransport {
       setup.controller.signal.addEventListener("abort", cancel, { once: true });
       if (setup.controller.signal.aborted) cancel();
     });
+  }
+
+  async waitForConnection(setup) {
+    await new Promise((resolve, reject) => {
+      const startedAt = Date.now();
+      let timer = 0;
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        setup.controller.signal.removeEventListener("abort", cancel);
+        if (error) reject(error);
+        else resolve();
+      };
+      const check = () => {
+        if (setup.controller.signal.aborted || this.setup !== setup) {
+          finish(new Error("operation_cancelled"));
+          return;
+        }
+        if (this.dc?.readyState === "open") {
+          finish();
+          return;
+        }
+        if (this.pc?.connectionState === "failed" || Date.now() - startedAt >= CONNECTION_TIMEOUT_MS) {
+          finish(new Error("connection_timeout"));
+          return;
+        }
+        timer = window.setTimeout(check, 100);
+      };
+      const cancel = () => finish(new Error("operation_cancelled"));
+      setup.controller.signal.addEventListener("abort", cancel, { once: true });
+      check();
+    });
+    this.assertSetupActive(setup);
+    this.setup = null;
   }
 
   send(message) {
@@ -2613,6 +2679,10 @@ class MatchController {
     window.clearTimeout(this.gameTimer);
     refs.gameArea.replaceChildren();
     const intro = document.createElement("div");
+    refs.gameArea.setAttribute(
+      "aria-label",
+      `Microgame: ${this.games[gameId].prompt}. ${this.games[gameId].hint || "Get ready"}`
+    );
     intro.className = "instr";
     intro.style.transition = "opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease";
     intro.innerHTML =
@@ -2808,12 +2878,15 @@ class MatchController {
 
   endSolo() {
     this.ended = true;
+    const isNewBest = this.myScore > appState.bestSolo;
+    if (isNewBest) saveBestScore(this.myScore);
+    updateBestScoreDisplay(Object.keys(this.games).length);
     const average = this.times.length
       ? (this.times.reduce((sum, value) => sum + value, 0) / this.times.length).toFixed(2)
       : "--";
     refs.gameArea.innerHTML =
-      `<div class="instr" style="font-size:clamp(40px,16cqw,90px)">GOOD RUN<br>` +
-      `<span style="font-size:clamp(20px,8cqw,40px)">WINS: ${this.myScore}<br>AVG TIME: ${average}s</span></div>`;
+      `<div class="instr" style="font-size:clamp(40px,16cqw,90px)">${isNewBest ? "NEW BEST!" : "GOOD RUN"}<br>` +
+      `<span style="font-size:clamp(20px,8cqw,40px)">WINS: ${this.myScore}<br>BEST: ${appState.bestSolo}<br>AVG TIME: ${average}s</span></div>`;
     this.renderPostMatchActions({ solo: true });
   }
 
@@ -2956,6 +3029,7 @@ const signaling = new SignalingClient(appState.signalingBase);
 const transport = new PeerTransport();
 const games = createGames();
 const controller = new MatchController({ games, transport });
+updateBestScoreDisplay(Object.keys(games).length);
 
 transport.onopen = () => {
   showConnectedLobby(appState.pendingRole || "guest");
@@ -2995,6 +3069,18 @@ refs.soloBtn.onclick = () => {
   setStatus("Solo mode loaded.", "success");
   controller.enterSolo();
 };
+
+refs.exitGameBtn.onclick = () => {
+  if (window.confirm("Quit this run and return to the lobby?")) {
+    controller.returnToLobby();
+  }
+};
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && refs.game.classList.contains("active")) {
+    refs.exitGameBtn.click();
+  }
+});
 
 refs.hostBtn.onclick = () => {
   setLobbyMode("host");
@@ -3078,6 +3164,7 @@ refs.createRoomBtn.onclick = async () => {
         error.message === "signaling_missing" ? "No signaling backend at /api. Run with Wrangler dev/deploy." :
         error.message === "signaling_unreachable" ? "Signaling backend unreachable." :
         error.message === "signaling_failed" ? "Signaling backend failed." :
+        error.message === "connection_timeout" ? "Peer connection timed out. Try again or switch networks." :
         "Unable to create room.",
         "error"
       );
@@ -3112,6 +3199,7 @@ refs.joinRoomBtn.onclick = async () => {
         error.message === "signaling_missing" ? "No signaling backend at /api. Run with Wrangler dev/deploy." :
         error.message === "signaling_unreachable" ? "Signaling backend unreachable." :
         error.message === "signaling_failed" ? "Signaling backend failed." :
+        error.message === "connection_timeout" ? "Peer connection timed out. Try again or switch networks." :
         "Unable to join room.",
         "error"
       );

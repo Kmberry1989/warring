@@ -5,10 +5,12 @@
   "description": "Touch-first microgame battler with WebRTC multiplayer and Cloudflare Worker signaling.",
   "scripts": {
     "dev": "wrangler dev --local --port 8787",
+    "check": "node --check app.js && node --check rooms-worker.js && npm run check:copies",
+    "check:copies": "cmp -s index.html public/index.html && cmp -s app.js public/app.js",
     "deploy": "wrangler deploy",
     "whoami": "wrangler whoami"
   },
-  "dependencies": {
-    "archiver": "^8.0.0"
+  "devDependencies": {
+    "wrangler": "^4.151.1"
   }
 }
